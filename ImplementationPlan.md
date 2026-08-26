@@ -15,8 +15,11 @@ DuckNet is a stepwise .NET 9 learning/production-shaped demo: smart rubber ducks
 | **A — The Kernel** | 0–3 | At-least-once, idempotency, per-key ordering, durable log + outbox |
 | **B — Distributed** | 4–6 | Multi-Center Aspire host, CQRS projections, schema evolution |
 | **C — Production pain** | 7–11 | DLQ, hot partitions, tracing, sagas, broker swap |
+| **D — Cloud & ops** | 12+ | Azure hosting, per-Center CI/CD, CCA-F-aligned agent workflows |
 
 **Interview milestone:** Steps 0–4 before Epiroc interview (~4–5 evenings).
+
+**Parallel from Step 0:** Minimal GitHub Actions CI + Claude headless PR review (see [CI/CD & Claude review](#cicd--deploy-any-center-any-time) and [CCA-F integration](#cca-f-integration--development--cicd--system)).
 
 ---
 
@@ -79,6 +82,17 @@ DuckNet/
 │   ├── DuckNet.AlarmCenter/
 │   ├── DuckNet.DashboardCenter/      # Step 5
 │   └── DuckNet.BillingCenter/        # Step 10
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                    # build + test (Step 0)
+│       ├── claude-review.yml         # headless PR review (Step 0)
+│       └── deploy-center.yml         # per-Center deploy (Step 4+)
+├── infra/
+│   ├── bicep/                        # Step 12 — Azure resources
+│   └── docker/                       # one Dockerfile per Center
+├── CLAUDE.md                         # architecture rules for humans + agents
+├── .claude/
+│   └── skills/                       # CCA-F-aligned project skills
 └── tests/
     ├── DuckNet.Kernel.Tests/         # keep kernel tests
     ├── DuckNet.AlarmCenter.Tests/
@@ -243,7 +257,7 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Implement:**
 
-1. **SQLite first** (Postgres optional via connection string) — single file `ducknet.db` for simplicity.
+1. **SQLite first** (locked in for Steps 3–7) — single file per Center for simplicity. **PostgreSQL from Step 8** when concurrent writers matter; same schema, connection string swap only.
 
    **`event_log`** table:
    ```sql
@@ -585,6 +599,299 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Phase C tag:** `step-11-production-shaped`
 
+**Azure note:** Step 11 proves the port locally with RabbitMQ. Step 12 adds `ServiceBusEventBus` for Azure — same empty Center diff constraint applies again.
+
+---
+
+## Phase D — Cloud, CI/CD & certification-shaped ops
+
+### Step 12 (future) — Host on Azure
+
+**Goal:** Same Center boundaries and event-driven seams as local — swap infrastructure implementations, not Center code. This mirrors the Step 11 punchline at cloud scale.
+
+**Architecture decisions (locked in for Azure path):**
+
+| Local (Steps 3–11) | Azure target | What changes |
+|--------------------|--------------|--------------|
+| SQLite per Center | **Azure Database for PostgreSQL Flexible Server** — one server, **separate database per Center** (Rule 2 preserved) | Connection strings via Key Vault; EF migrations per Center |
+| Telemetry-owned append log | **Azure Event Hubs** (partition key = `duckId`) | Log write path moves from SQL table to Event Hub producer in TelemetryCenter; replay = consume from beginning |
+| RabbitMQ | **Azure Service Bus** (topics + subscriptions = consumer groups) | New `ServiceBusEventBus : IEventBus`; Center handlers unchanged |
+| Aspire AppHost (local) | **Azure Container Apps** — one app per Center | Container images from CI; KEDA scale on queue lag (Step 8 metrics) |
+| OpenTelemetry → Aspire dashboard | **Azure Monitor / Application Insights** | Same OTel SDK; different exporter endpoint |
+| DLQ table | **Service Bus dead-letter sub-queue** + optional blob archive for inspection | Retry policy moves to SDK + platform |
+| Secrets in appsettings | **Azure Key Vault** + **Managed Identity** | No secrets in repo or GitHub env plaintext |
+
+**What does *not* change:**
+
+- Center `.csproj` projects and handler logic (same constraint as Step 11).
+- `DuckNet.Contracts` event shapes.
+- Outbox pattern inside each Center (still local DB transaction → publish).
+- Consumer inbox, offset store, upcasters, saga state machines.
+
+**Implement:**
+
+1. **`infra/bicep/main.bicep`** (or modular stack):
+   - Resource group per environment (`dev`, `prod`).
+   - Container Apps Environment + one Container App per Center.
+   - Event Hubs namespace + hub `ducknet-events`.
+   - Service Bus namespace + topic `ducknet-events` + subscriptions per consumer group.
+   - PostgreSQL Flexible Server + databases: `telemetry`, `alarm`, `dashboard`, `billing`.
+   - Key Vault + Managed Identities per Container App.
+   - Log Analytics + Application Insights.
+
+2. **`DuckNet.EventBus` implementations:**
+   - `EventHubsLogWriter` — TelemetryCenter appends to Event Hubs (system of record for replay).
+   - `ServiceBusEventBus` — transport to Centers (at-least-once, subscription per group).
+   - Keep `RabbitMqEventBus` and `InMemoryEventBus` for local dev — **environment selects implementation**.
+
+3. **Aspire → Azure mapping:**
+   - Replace AppHost orchestration with Bicep + Container Apps revision deploys.
+   - Optional: keep AppHost for local dev only; `azd` profile for cloud (`azd init` + `azd up`).
+
+4. **Hot partition story (Step 8) on Azure:**
+   - Event Hubs partition count = shard count (e.g. 4).
+   - `duckId` as partition key → same lesson as Telia Event Hubs/Cosmos.
+   - Container Apps KEDA scaler on Service Bus subscription depth.
+
+5. **Environments:**
+   - `dev` — min replicas 0–1, smaller SKUs, synthetic ducks only.
+   - `prod` — min replicas 1, alerts on DLQ depth and consumer lag.
+
+**Acceptance criteria:**
+
+- [ ] Full demo runs in Azure: squeak → alarm → dashboard → billing with trace in App Insights.
+- [ ] Deploy/update **one** Center without redeploying others (see CI/CD below).
+- [ ] Stop AlarmCenter Container App → events queue → restart → catches up with no data loss.
+- [ ] `git diff` on Center handler projects empty when switching local RabbitMQ ↔ Azure Service Bus.
+
+**Estimated effort:** ~3–5 evenings (IaC + first deploy + wiring). Incremental if Bicep scaffold starts at Step 4.
+
+**Phase D tag:** `step-12-azure`
+
+---
+
+## CI/CD — deploy any Center, any time
+
+**Principle:** Each Center is an independently deployable unit. CI validates the whole solution; CD deploys only what changed.
+
+### Pipeline layout
+
+```
+.github/workflows/
+├── ci.yml                 # every push + PR
+├── claude-review.yml      # PRs only — headless architecture review
+└── deploy-center.yml      # manual dispatch + path-filtered auto deploy
+```
+
+### `ci.yml` — add at Step 0 (before any Center exists)
+
+Runs on every push/PR to `main`:
+
+```yaml
+# Jobs: build, test, architecture-test
+# Matrix: os [ubuntu-latest], dotnet [9.x]
+# Steps: restore → build DuckNet.sln → test → (Step 4+) docker build --dry-run
+```
+
+**Done when:** red PR if tests fail; green main always deployable.
+
+### `deploy-center.yml` — add at Step 4 (first multi-Center split)
+
+**Triggers:**
+
+1. **Manual `workflow_dispatch`** — inputs: `center` (telemetry | alarm | dashboard | billing | all), `environment` (dev | prod).
+2. **Path-filtered auto-deploy to `dev`** on merge to `main`:
+   - `src/DuckNet.TelemetryCenter/**` → deploy telemetry only
+   - `src/DuckNet.AlarmCenter/**` → deploy alarm only
+   - (same pattern for each Center)
+   - `src/DuckNet.Contracts/**` or `src/DuckNet.EventBus/**` → deploy **all** Centers (shared contract change)
+
+**Deploy steps (local Docker path, Steps 4–11):**
+
+1. Build Center container image (`infra/docker/DuckNet.{Center}/Dockerfile`).
+2. Tag: `{registry}/ducknet-{center}:{git-sha}`.
+3. Push to GitHub Container Registry (ghcr.io).
+4. Update Compose / Aspire deploy manifest for that Center only.
+5. Smoke test: HTTP health + consume one synthetic event.
+
+**Deploy steps (Azure path, Step 12+):**
+
+1. Same build + push to Azure Container Registry.
+2. `az containerapp update --name {center} --image ...` (or Bicep what-if + deploy scoped module).
+3. Wait for revision healthy; run smoke test against Azure URL.
+4. Rollback = redeploy previous image tag (keep last N tags).
+
+### Per-Center Dockerfile pattern
+
+One Dockerfile per Center from Step 4 — multi-stage, ~same shape for all:
+
+```dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet publish src/DuckNet.TelemetryCenter -c Release -o /app
+
+FROM mcr.microsoft.com/dotnet/aspnet:9.0
+WORKDIR /app
+COPY --from=build /app .
+ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
+```
+
+### Deployment matrix
+
+| Center | Image | DB | Subscribes | Publishes |
+|--------|-------|-----|------------|-----------|
+| TelemetryCenter | `ducknet-telemetry` | `telemetry` | — | `Squeaked` |
+| AlarmCenter | `ducknet-alarm` | `alarm` | `Squeaked` | `AlarmRaised`, `AlarmResolved` |
+| DashboardCenter | `ducknet-dashboard` | `dashboard` | all | — |
+| BillingCenter | `ducknet-billing` | `billing` | alarm events | `FeeReserved`, `FeeReleased` |
+
+### Secrets & environments
+
+- GitHub Environments: `dev`, `prod` (prod requires reviewer approval).
+- Secrets: `ANTHROPIC_API_KEY` (review job), Azure credentials / federated OIDC (`AZURE_CLIENT_ID`, etc.) from Step 12.
+- Never store connection strings in repo — inject at deploy from Key Vault or GitHub Environment secrets.
+
+**Acceptance criteria:**
+
+- [ ] Merge to main that only touches AlarmCenter deploys AlarmCenter to dev — nothing else.
+- [ ] Manual dispatch can deploy `all` or any single Center to prod.
+- [ ] Contract change triggers full redeploy with visible pipeline fan-out.
+
+---
+
+## CCA-F integration — development, CI/CD & system
+
+[Claude Certified Architect – Foundations (CCA-F)](https://claudearchitectcertification.com/exam-guide) tests production-shaped Claude systems across five domains. DuckNet is deliberately structured so **building the system IS studying for the exam** — not a separate course track.
+
+### Domain map: exam ↔ DuckNet
+
+| CCA-F domain | Weight | DuckNet practice |
+|--------------|--------|------------------|
+| **D1 Agentic architecture & orchestration** | 27% | Centers as autonomous agents; choreography via events (no hub calling slaves); BillingCenter saga as state machine; subagents in CI = specialized review skills per concern |
+| **D2 Tool design & MCP** | 18% | MCP servers exposing DuckNet ops: `replay-log`, `inspect-dlq`, `rebuild-dashboard`, `publish-test-squeak` — Claude debugs the live system through tools, not SQL |
+| **D3 Claude Code config & CI/CD** | 20% | `CLAUDE.md` hierarchy, project Skills, headless `-p` in GitHub Actions, PostToolUse hooks for formatting |
+| **D4 Prompt engineering & structured output** | 20% | Review prompt returns JSON `{ "verdict", "violations[]", "suggestions[]" }`; event schema validation in CI |
+| **D5 Context management & reliability** | 15% | Skills load step-specific context; review scopes to PR diff only; idempotent CI jobs; explicit failure modes in prompts |
+
+### Development process (from Step 0)
+
+1. **`CLAUDE.md` at repo root** — encode the five non-negotiable rules, Center isolation, and step tagging convention. This is the agent constitution (D3).
+
+2. **Project Skills (`.claude/skills/`)** — add incrementally:
+
+   | Skill | Introduced | Purpose |
+   |-------|------------|---------|
+   | `ducknet-kernel` | Step 0 | Inbox, sequencer, hostile bus patterns |
+   | `ducknet-center` | Step 4 | Scaffold new Center with own DB + consumer group |
+   | `ducknet-event-contract` | Step 6 | Version + upcaster checklist |
+   | `ducknet-mcp-ops` | Step 9+ | MCP tool definitions for log/DLQ/rebuild |
+
+3. **Plan mode for steps ≥ 4** — each new Center or infra step starts in Plan mode; implementation follows the step acceptance criteria in this doc (D3 exam pattern).
+
+4. **MCP ops server (Step 9+, optional but high CCA-F value)** — small `DuckNet.Mcp` project exposing:
+   - `get_consumer_lag(center, group)`
+   - `list_dlq(center, limit)`
+   - `replay_event(event_id)`
+   - `rebuild_dashboard()`
+
+   Connect in Claude Code settings — you debug distributed squeaks the way the exam expects (D2).
+
+### CI/CD process (CCA-F D3)
+
+| Workflow | CCA-F concept demonstrated |
+|----------|------------------------------|
+| `ci.yml` | Reliable automation; deterministic builds |
+| `claude-review.yml` | Headless Claude Code in CI; `-p` flag; structured PR feedback |
+| `deploy-center.yml` | Scoped automation; human approval gate on prod |
+| PostToolUse hook | Auto `dotnet format` after agent edits locally |
+
+### Interview / exam soundbite
+
+*"DuckNet isn't just an event-driven demo — it's my CCA-F study lab: MCP tools for ops, headless Claude reviewing every PR against architecture rules, and Centers orchestrated by events instead of a central conductor."*
+
+---
+
+## Claude as CI reviewer from the beginning
+
+**Short answer: No, it's not a lot more work — and yes, it looks cool. Budget ~1–2 hours at Step 0.**
+
+### Why add it early
+
+- **CCA-F D3 (20%)** explicitly covers wiring Claude Code into CI/CD with headless mode — doing this from Step 0 means every later step is practice for the exam.
+- **Architecture rules are enforced from day one** — the five non-negotiable rules in `CLAUDE.md` get checked on every PR before you have four Centers to accidentally couple.
+- **Demo value** — PR comments like *"AlarmCenter references TelemetryCenter DB — violates Rule 2"* are instant interview material.
+
+### Minimal setup (Step 0, ~1–2 hours)
+
+1. **`CLAUDE.md`** — rules + project layout (~30 min).
+2. **`.github/workflows/claude-review.yml`** (~30 min):
+
+   ```yaml
+   name: Claude Architecture Review
+   on:
+     pull_request:
+       types: [opened, synchronize, reopened]
+   jobs:
+     review:
+       runs-on: ubuntu-latest
+       permissions:
+         pull-requests: write
+         contents: read
+       steps:
+         - uses: actions/checkout@v4
+           with:
+             fetch-depth: 0
+         - name: Claude review
+           env:
+             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+           run: |
+             claude -p "$(cat .github/prompts/architecture-review.md)" \
+               --allowedTools "Read,Grep,Glob" \
+               > review.md
+         - uses: actions/github-script@v7
+           with:
+             script: |
+               // post review.md as PR comment
+   ```
+
+3. **`.github/prompts/architecture-review.md`** — structured output prompt (D4):
+
+   ```
+   Review this PR diff against CLAUDE.md rules.
+   Output JSON only: { "verdict": "approve"|"request_changes", "violations": [...], "notes": [...] }
+   Fail the build if any violation severity is "critical".
+   ```
+
+4. **GitHub secret** `ANTHROPIC_API_KEY` — store in repo settings.
+
+5. **Optional PostToolUse hook** (local dev, D3) — `dotnet format` on edited `.cs` files.
+
+### What you defer (not Step 0 work)
+
+| Enhancement | When | Extra effort |
+|-------------|------|--------------|
+| Block merge on `request_changes` | Step 4 | ~30 min — branch protection rule |
+| Center-specific review skills | Step 4 | ~1 hr per skill |
+| MCP-connected review (query test results) | Step 9 | ~2–3 hr |
+| Full multi-agent review (security + arch + tests) | Optional stretch | ~1 evening — overkill until Step 6 |
+
+### Cost & reliability expectations
+
+- **Cost:** ~$0.05–0.30 per PR review (depends on diff size and model). Negligible for a personal lab repo.
+- **Flakiness:** Pin prompt + `--allowedTools` read-only; review advises, **`ci.yml` tests decide merge**. Never let Claude be the only gate until prompts are stable.
+- **Exam alignment:** Headless CI review + `CLAUDE.md` + Skills = direct D3/D4/D5 study material.
+
+### Recommended timeline
+
+| Step | CI/CD milestone |
+|------|-----------------|
+| **0** | `ci.yml` + `claude-review.yml` + root `CLAUDE.md` |
+| **4** | Dockerfiles + `deploy-center.yml` (local/ghcr) |
+| **6** | Contract-change → deploy-all fan-out |
+| **9** | MCP ops server for debug + richer review context |
+| **12** | Azure OIDC + Container Apps deploy + App Insights |
+
 ---
 
 ## Cross-cutting concerns
@@ -612,7 +919,7 @@ Consumer: Handler → ConsumerOffsetStore
 
 ### Commit / tagging cadence
 
-- One git tag per completed step: `step-0` … `step-11`.
+- One git tag per completed step: `step-0` … `step-12`.
 - Commit message format: `feat(step-N): short description`.
 - Keep `ImplementationPlan.md` checklist updated as steps complete.
 
@@ -641,9 +948,13 @@ flowchart TD
   S8 --> S9[Step 9: Tracing]
   S9 --> S10[Step 10: Billing saga]
   S10 --> S11[Step 11: RabbitMQ swap]
+  S11 --> S12[Step 12: Azure hosting]
+  S0 -.-> CI[CI + Claude review<br/>parallel from Step 0]
+  S4 -.-> CD[Per-Center deploy<br/>from Step 4]
+  CD --> S12
 ```
 
-Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5 start. Steps 7–9 are mostly independent modules layered onto existing consumers.
+Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5 start. Steps 7–9 are mostly independent modules layered onto existing consumers. **CI + Claude review** runs in parallel from Step 0; **per-Center CD** from Step 4; **Azure** after Step 11.
 
 ---
 
@@ -662,6 +973,8 @@ Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5
 | Debuggability | 9 | Single trace across Centers |
 | Sagas vs 2PC | 10 | Compensation + timeout |
 | Ports & adapters | 11 | Empty Center diff on broker swap |
+| Cloud migration | 12 | Same Centers, swap bus/log/DB to Azure |
+| AI-native ops | CI + MCP | CCA-F: headless review + MCP debug tools |
 
 **Phase A soundbite:** *"I've forced duplicates and out-of-order delivery on purpose and kept counts correct."*
 
@@ -681,25 +994,42 @@ Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5
 | Leisure | 5–6 | CQRS + schema evolution |
 | Leisure | 7–9 | Ops-shaped reliability |
 | Leisure | 10–11 | Saga + broker swap punchline |
+| Leisure | 12 | Azure + full CD pipeline |
+| **Step 0 parallel** | CI + Claude review | ~1–2 hr; runs on every PR from day one |
 
 ---
 
 ## Definition of done (whole project)
 
-- [ ] All 12 steps tagged and runnable from AppHost.
+- [ ] All steps 0–12 tagged and runnable (local Aspire through Step 11; Azure for Step 12).
 - [ ] Architecture tests enforce Center isolation.
 - [ ] README with demo commands for each step.
 - [ ] `DuckNetArchitectureSteps.html` reflects final architecture (update if implementation diverges).
-- [ ] Single-command demo: squeak → alarm → dashboard → billing trace visible in Aspire.
+- [ ] Single-command demo: squeak → alarm → dashboard → billing trace visible in Aspire / App Insights.
+- [ ] `ci.yml` green on main; `claude-review.yml` posting on PRs.
+- [ ] `deploy-center.yml` can deploy any single Center or all to dev/prod.
+- [ ] MCP ops tools documented for log replay, DLQ inspect, dashboard rebuild (CCA-F D2).
 
 ---
 
-## Open decisions (resolve before Step 4)
+## Architecture decisions (locked in)
 
-| Decision | Options | Recommendation |
-|----------|---------|----------------|
-| Database | SQLite vs Postgres | SQLite until Step 8; Postgres if hot-partition demo needs concurrent writers |
-| Log ownership | Shared log service vs Telemetry-owned | TelemetryCenter owns write path; others subscribe via bus only |
-| Broker (Step 11) | RabbitMQ vs Azure Service Bus emulator | RabbitMQ + Aspire container (simpler local DX) |
+Resolved before Step 4 implementation:
 
-Document chosen options in commit message when implementing Step 4.
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **Database (Steps 3–7)** | **SQLite** per Center | Zero ops locally; file-per-DB keeps Rule 2 obvious |
+| **Database (Steps 8+)** | **PostgreSQL** per Center | Hot-partition / concurrent writer demo needs real concurrency; same schema, swap connection string |
+| **Database (Step 12 Azure)** | **Azure Database for PostgreSQL** — one server, separate DB per Center | Mirrors local model; no shared schema |
+| **Log ownership** | **TelemetryCenter owns the write path** | Other Centers subscribe via `IEventBus` only — never read Telemetry's DB |
+| **Log storage (local)** | Append-only table in Telemetry DB (Step 3–11) | Simple replay; same code path as outbox dispatcher |
+| **Log storage (Azure)** | **Azure Event Hubs** | Telia-shaped partition key lesson; replay from beginning |
+| **Broker (Step 11 local)** | **RabbitMQ** via Aspire container | Simplest local at-least-once broker; proves port/adapter |
+| **Broker (Step 12 Azure)** | **Azure Service Bus** topics + subscriptions | Production-shaped; consumer group = subscription name |
+| **IaC (Step 12)** | **Bicep** + optional `azd` | Native Azure, good Aspire migration story |
+| **Container hosting** | **Azure Container Apps** | One app per Center — matches deploy-any-Center CI/CD |
+| **CI from** | **Step 0** | Cheap insurance; CCA-F D3 practice |
+| **Claude PR review from** | **Step 0** | ~1–2 hr setup; high demo + exam value |
+| **CD from** | **Step 4** | Needs real Center boundaries to mean anything |
+
+Document any deviation in commit message when implementing the affected step.

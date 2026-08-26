@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DuckNet — Architecture per Step</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<style>
+  :root { --accent:#1f4e5f; --new:#059669; --chg:#b45309; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; margin:0; background:#f8fafc; color:#1e293b; }
+  .wrap { max-width: 980px; margin:0 auto; padding:24px 16px 80px; }
+  h1 { color:var(--accent); font-size:1.7rem; margin-bottom:4px; }
+  .sub { color:#64748b; margin-bottom:20px; }
+  h2 { color:var(--accent); border-bottom:2px solid var(--accent); padding-bottom:4px; margin-top:44px; }
+  h3 { color:var(--accent); margin-top:32px; }
+  .card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px; margin:10px 0 6px; overflow-x:auto; }
+  .phase .card { border:2px solid var(--accent); background:#fbfdff; }
+  .delta { font-size:0.9rem; color:#475569; margin:2px 0 0; }
+  .delta b { color:var(--new); }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; font-size:0.85rem; margin:8px 0 0; color:#475569; }
+  .sw { display:inline-block; width:14px; height:14px; border-radius:3px; margin-right:5px; vertical-align:-2px; }
+  .mermaid { display:flex; justify-content:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>DuckNet — Target Architecture, Step by Step</h1>
+<div class="sub">One diagram per step. Green = added this step, amber = modified this step, grey = unchanged. Phase summaries in blue frames.</div>
+<div class="legend">
+  <span><span class="sw" style="background:#d1fae5;border:2px solid #059669"></span>New this step</span>
+  <span><span class="sw" style="background:#fef3c7;border:2px solid #b45309"></span>Changed this step</span>
+  <span><span class="sw" style="background:#f1f5f9;border:1px solid #94a3b8"></span>Existing</span>
+</div>
+
+<h2>Phase A — The Kernel</h2>
+
+<h3>Step 0 — One event, one producer, one consumer</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  SIM["DuckSimulator<br/>emits Squeaked"]:::newc --> BUS["In-memory bus<br/>Channel&lt;Event&gt;"]:::newc --> CNT["SqueakCounter<br/>prints totals"]:::newc
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+</pre></div>
+<p class="delta"><b>Added:</b> everything. One process, ~150 lines. Producer knows nothing about the consumer.</p>
+
+<h3>Step 1 — At-least-once + idempotent consumer</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  SIM["DuckSimulator"]:::old --> BUS["Hostile bus"]:::chg
+  BUS --> DUP["Duplicator<br/>~10-20% redelivery"]:::newc
+  DUP --> INB["Inbox<br/>processed event ids"]:::newc --> CNT["SqueakCounter"]:::old
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> deliberate duplication in the bus; inbox dedup in the consumer. Count stays exact under duplicates.</p>
+
+<h3>Step 2 — Out-of-order delivery + per-key ordering</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  SIM["DuckSimulator<br/>+ duckId partition key<br/>+ per-duck seq no"]:::chg --> BUS["Hostile bus"]:::chg
+  BUS --> DUP["Duplicator"]:::old
+  BUS --> SHF["Shuffler<br/>randomizes order"]:::newc
+  DUP --> ORD
+  SHF --> ORD["Per-key sequencer<br/>gap detect + buffer"]:::newc
+  ORD --> INB["Inbox"]:::old --> CNT["SqueakCounter"]:::old
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> shuffled delivery; per-key resequencing. <b>Changed:</b> events carry partition key + sequence number — ordering is per-partition, never global.</p>
+
+<h3>Step 3 — Durability: append-only log + outbox</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  subgraph P["Producer side"]
+    SIM["DuckSimulator"]:::chg --> TX["Single transaction"]:::newc
+    TX --> ST[("State table")]:::newc
+    TX --> OB[("Outbox table")]:::newc
+    OB --> DSP["Outbox dispatcher"]:::newc
+  end
+  DSP --> LOG[("Append-only event log<br/>offset | key | type | ver | payload")]:::newc
+  LOG --> BUS["Hostile bus<br/>dup + shuffle"]:::old
+  subgraph C["Consumer side"]
+    ORD["Per-key sequencer"]:::old --> INB["Inbox"]:::old --> CNT["SqueakCounter"]:::old
+    OFF[("Consumer offset store")]:::newc
+  end
+  BUS --> ORD
+  CNT --> OFF
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> the log becomes the source of truth; outbox kills the dual-write problem; consumers own their offset. Kill + restart = resume, no loss, no double-count.</p>
+
+<div class="phase">
+<h3>Phase A Summary — the kernel</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  subgraph PROD["Producer"]
+    SIM["DuckSimulator"] --> TX["Tx: state + outbox"] --> DSP["Dispatcher"]
+  end
+  DSP --> LOG[("Event log<br/>source of truth")]
+  LOG --> BUS["Hostile transport<br/>at-least-once, unordered"]
+  BUS --> CONS
+  subgraph CONS["Consumer"]
+    ORD["Per-key sequencer"] --> INB["Inbox / dedup"] --> H["Handler"] --> OFF[("Own offset")]
+  end
+  classDef k fill:#e0f2fe,stroke:#1f4e5f,stroke-width:2px
+  class SIM,TX,DSP,LOG,BUS,ORD,INB,H,OFF k
+</pre></div>
+<p class="delta">The smallest central piece of the Telia complexity: at-least-once + idempotency + per-key ordering + durable log with outbox. Everything after this is composition.</p>
+</div>
+
+<h2>Phase B — Becoming Distributed</h2>
+
+<h3>Step 4 — Second Center, own database (Aspire)</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  subgraph ASP["Aspire AppHost"]
+    subgraph TC["TelemetryCenter"]
+      SIM["DuckSimulator + ingest"]:::chg --> TDB[("Telemetry DB<br/>+ outbox")]:::chg
+    end
+    TDB --> LOG[("Event log")]:::old
+    LOG --> AC
+    subgraph AC["AlarmCenter (new)"]
+      AH["Squeaked handler<br/>rate rule &gt; N/min"]:::newc --> ADB[("Alarm DB<br/>own schema")]:::newc
+      AH --> AE["publishes AlarmRaised"]:::newc
+    end
+    AE --> LOG
+  end
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> AlarmCenter with its own database, subscribing only to events, publishing its own facts. No calls between Centers, no shared DB. Eventual consistency becomes visible — and correct.</p>
+
+<h3>Step 5 — CQRS: disposable read model</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  TC["TelemetryCenter"]:::old --> LOG[("Event log")]:::old
+  AC["AlarmCenter"]:::old --> LOG
+  LOG --> AC
+  LOG --> DC
+  subgraph DC["DashboardCenter (new)"]
+    PRJ["Projector"]:::newc --> RM[("Read model<br/>squeaks/duck/hour")]:::newc
+    RB["rebuild command"]:::newc -. "drop + full replay" .-> PRJ
+  end
+  LOG -. "replay from offset 0" .-> RB
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> read side built purely from events. Projections are cattle, the log is the pet: delete the read model, replay, get identical results.</p>
+
+<h3>Step 6 — Schema evolution across a boundary</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  TC["TelemetryCenter<br/>emits Squeaked v2<br/>(+ volumeDb)"]:::chg --> LOG[("Event log<br/>mixed v1 + v2")]:::chg
+  LOG --> U1["Upcaster v1→v2<br/>tolerant reader"]:::newc --> AC["AlarmCenter<br/>unchanged handler"]:::old
+  LOG --> U2["Upcaster v1→v2"]:::newc --> DC["DashboardCenter"]:::old
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> versioned contracts + upcasting so N independent consumers and years of old events keep working. The hardest day-2 problem in interconnected systems.</p>
+
+<div class="phase">
+<h3>Phase B Summary — three autonomous Centers</h3>
+<div class="card"><pre class="mermaid">
+flowchart TB
+  LOG[("Event log — versioned contracts, replayable")]
+  subgraph TC["TelemetryCenter"]
+    T1["Ingest + outbox"] --> T2[("Own DB")]
+  end
+  subgraph AC["AlarmCenter"]
+    A1["Rules + upcaster"] --> A2[("Own DB")]
+  end
+  subgraph DC["DashboardCenter"]
+    D1["Projector + rebuild"] --> D2[("Disposable read model")]
+  end
+  TC -- "Squeaked v2" --> LOG
+  LOG -- "Squeaked" --> AC
+  AC -- "AlarmRaised" --> LOG
+  LOG -- "all events" --> DC
+  classDef k fill:#e0f2fe,stroke:#1f4e5f,stroke-width:2px
+  class LOG,T1,T2,A1,A2,D1,D2 k
+</pre></div>
+<p class="delta">Interconnected Centers: autonomy, failure isolation, eventual consistency, CQRS, versioned contracts. Structurally a mini-Telia.</p>
+</div>
+
+<h2>Phase C — Production-Shaped Pain</h2>
+
+<h3>Step 7 — Poison messages + DLQ</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  LOG[("Event log")]:::old --> RT["Retry w/ backoff"]:::newc
+  RT -->|ok| H["Handler"]:::old
+  RT -->|"fails N times"| DLQ[("Dead-letter store<br/>inspect + replay")]:::newc
+  DLQ -. "manual replay" .-> RT
+  RT -->|"keep consuming"| NEXT["next event"]:::old
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> per-consumer retry pipeline + DLQ. One malformed event never blocks the partition.</p>
+
+<h3>Step 8 — Backpressure + hot partitions</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  HOT["LoudDuck<br/>100x volume"]:::newc --> LOG[("Event log")]:::old
+  LOG --> SH["Key-hash sharding"]:::newc
+  SH --> W1["Worker shard 1<br/>bounded channel"]:::newc
+  SH --> W2["Worker shard 2<br/>bounded channel"]:::newc
+  SH --> W3["Worker shard 3<br/>bounded channel"]:::newc
+  W1 --> M["Per-partition lag metrics"]:::newc
+  W2 --> M
+  W3 --> M
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> a deliberately hot key, then the fix: sharded workers, bounded channels, lag measurement. The Event Hubs/Cosmos partition-key lesson on a laptop.</p>
+
+<h3>Step 9 — Distributed tracing</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  SIM["Simulator"]:::chg -- "traceId, causationId" --> TC["TelemetryCenter"]:::chg
+  TC -- "propagated ids" --> AC["AlarmCenter"]:::chg
+  TC -- "propagated ids" --> DC["DashboardCenter"]:::chg
+  TC --> OT["OpenTelemetry exporter"]:::newc
+  AC --> OT
+  DC --> OT
+  OT --> DASH["Aspire dashboard<br/>one squeak, end-to-end span"]:::newc
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px
+</pre></div>
+<p class="delta"><b>Added:</b> correlation/causation ids on every event, OTel spans across Centers. Tracing is what makes an interconnected system debuggable.</p>
+
+<h3>Step 10 — Saga: cross-Center workflow without transactions</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  AC["AlarmCenter"]:::old -- "AlarmRaised" --> LOG[("Event log")]:::old
+  AC -- "AlarmResolved" --> LOG
+  LOG --> BC
+  subgraph BC["BillingCenter (new)"]
+    SM["Saga state machine"]:::newc --> BDB[("Billing DB")]:::newc
+    SM -- "FeeReserved" --> OUT["outbox"]:::newc
+    SM -- "FeeReleased (compensation)" --> OUT
+    TMO["5-min timeout"]:::newc --> SM
+  end
+  OUT --> LOG
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Added:</b> BillingCenter coordinating via choreography + compensating events. No distributed transaction, no locks — state machines and time.</p>
+
+<h3>Step 11 (stretch) — Swap the transport</h3>
+<div class="card"><pre class="mermaid">
+flowchart LR
+  TC["TelemetryCenter"]:::old --> IB["IEventBus abstraction"]:::old
+  AC["AlarmCenter"]:::old --> IB
+  DC["DashboardCenter"]:::old --> IB
+  BC["BillingCenter"]:::old --> IB
+  IB -.->|removed| MEM["In-memory hostile bus"]:::chg
+  IB ==>|new impl| MQ["RabbitMQ container<br/>(via Aspire)"]:::newc
+  classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
+  classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px,stroke-dasharray:4
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
+</pre></div>
+<p class="delta"><b>Changed:</b> only the transport implementation. <code>git diff</code> on Center projects is empty — that diff is the punchline.</p>
+
+<div class="phase">
+<h3>Phase C Summary — final target architecture</h3>
+<div class="card"><pre class="mermaid">
+flowchart TB
+  subgraph ASP["Aspire AppHost + OTel dashboard"]
+    MQ["Broker (RabbitMQ)<br/>at-least-once, partitioned"]
+    LOG[("Event log<br/>versioned, replayable")]
+    subgraph TC["TelemetryCenter"]
+      T1["Ingest · outbox · sharded workers"] --> T2[("Own DB")]
+    end
+    subgraph AC["AlarmCenter"]
+      A1["Rules · upcaster · retry+DLQ"] --> A2[("Own DB")]
+    end
+    subgraph DC["DashboardCenter"]
+      D1["Projector · rebuild"] --> D2[("Read model")]
+    end
+    subgraph BC["BillingCenter"]
+      B1["Saga · timeout · compensation"] --> B2[("Own DB")]
+    end
+    TC --> LOG --> MQ
+    MQ --> AC
+    MQ --> DC
+    MQ --> BC
+    AC -- "AlarmRaised / Resolved" --> LOG
+    BC -- "FeeReserved / Released" --> LOG
+  end
+  classDef k fill:#e0f2fe,stroke:#1f4e5f,stroke-width:2px
+  class MQ,LOG,T1,T2,A1,A2,D1,D2,B1,B2 k
+</pre></div>
+<p class="delta">Four autonomous Centers, one durable log, one real broker, full tracing, DLQs, sharding, sagas — the Telia complexity, duck-sized.</p>
+</div>
+
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { curve: "basis" } });
+</script>
+</body>
+</html>

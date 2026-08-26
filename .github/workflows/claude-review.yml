@@ -1,0 +1,52 @@
+name: Claude Architecture Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run architecture review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          DIFF="$(git diff origin/${{ github.base_ref }}...HEAD)"
+          PROMPT="$(cat .github/prompts/architecture-review.md)"
+          claude -p "${PROMPT}
+
+          PR diff:
+          ${DIFF}" \
+            --allowedTools "Read,Grep,Glob" \
+            > review.md
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.existsSync('review.md')
+              ? fs.readFileSync('review.md', 'utf8')
+              : 'Claude review produced no output.';
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## Claude architecture review\n\n${body}`
+            });

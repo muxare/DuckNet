@@ -182,9 +182,11 @@ Store payloads as JSON in the log; deserialize with version-aware readers from S
 
 **Acceptance criteria:**
 
-- [ ] Counter totals match events produced (deterministic seed optional).
-- [ ] Producer has zero references to consumer types.
-- [ ] Solution builds; ~150 lines in kernel project acceptable.
+- [x] Counter totals match events produced (deterministic seed optional).
+- [x] Producer has zero references to consumer types.
+- [x] Solution builds; ~150 lines in kernel project acceptable.
+
+**Git:** branch `step-0` → merge to `main` → tag `step-0`
 
 **Demo script:** Run 30s; show per-duck and total counts.
 
@@ -918,6 +920,17 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 | **Demo tests** | Scriptable `--run-demo --seconds 30` exit code 0 |
 
 ### Commit / tagging cadence
+
+**Branch-per-step workflow (mandatory):**
+
+1. Create branch from `main`: `git checkout -b step-N`
+2. Implement until acceptance criteria pass locally (`dotnet test`, demo if applicable)
+3. Commit on the branch: `feat(step-N): description`
+4. Merge to `main`: `git checkout main && git merge step-N --no-ff`
+5. Tag on `main`: `git tag step-N`
+6. Push when remote exists: `git push origin main --tags`
+
+Never implement the next step on the same branch. Never merge a step with failing tests.
 
 - One git tag per completed step: `step-0` … `step-12`.
 - Commit message format: `feat(step-N): short description`.

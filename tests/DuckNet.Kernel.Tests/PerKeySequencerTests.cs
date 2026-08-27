@@ -70,6 +70,18 @@ public class PerKeySequencerTests
         Assert.Equal(1, sequencer.GapReportCount);
     }
 
+    [Fact]
+    public void Seeded_next_expected_emits_from_last_handled_plus_one()
+    {
+        var sequencer = new PerKeySequencer(new Dictionary<string, long> { ["duck-A"] = 3 });
+
+        Assert.Empty(sequencer.Offer(Squeak("duck-A", 3)));
+        Assert.Equal(1, sequencer.LateDropCount);
+
+        var released = sequencer.Offer(Squeak("duck-A", 4));
+        Assert.Equal(4, Assert.Single(released).SequenceNumber);
+    }
+
     private static EventEnvelope Squeak(string duckId, long seq) =>
         SqueakedEnvelope.Create(new Squeaked(duckId, seq, DateTimeOffset.UtcNow));
 }

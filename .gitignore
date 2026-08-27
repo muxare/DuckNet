@@ -6,4 +6,6 @@
 .vs/
 .DS_Store
 *.db
+*.db-wal
+*.db-shm
 *.sqlite

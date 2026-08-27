@@ -14,12 +14,13 @@ Single-process kernel until Step 4. If the user names a step (1–3), follow tha
 
 ## Invariants
 
-- Producer (`DuckSimulator`) never references consumer types. Integration is `IEventBus` only.
+- Producer (`DuckSimulator`) never references consumer types. It writes through `TransactionalPublisher` (state + outbox), not `IEventBus`.
 - Transport unit is `EventEnvelope`. Payload is JSON. Domain events (`Squeaked`) stay in `Domain/Events/`.
-- `PartitionKey` = duck id. Sequence is per key, never global.
+- `PartitionKey` = duck id. Sequence is per key, never global. Seq is assigned in the same transaction as the outbox row.
 - `EventId` is the idempotency key. Duplicates keep the same id.
-- `SubscribeAsync(consumerGroup, …)` — group is a logical subscriber. Do not ignore it when adding inbox/offsets.
-- Do not implement later steps early. Hostile bus, inbox, sequencer, outbox land on their step branches.
+- `SubscribeAsync(consumerGroup, …)` — group is a logical subscriber. Inbox and offsets are keyed by group.
+- Hostile middleware applies **after** log read, never before append.
+- Do not implement later steps early. Second Center / Aspire land on Step 4.
 
 ## Step 0 map
 
@@ -65,18 +66,37 @@ DuckSimulator → DuplicatorMiddleware → ShufflerMiddleware → PerKeySequence
 
 Ordering is per `PartitionKey`, never global. Compose: duplicator wraps shuffler wraps `InMemoryEventBus`.
 
+## Step 3 map
+
+```
+Simulator → Tx(state + outbox) → OutboxDispatcher → event_log
+  → LogTailFeeder → Duplicator → Shuffler → PerKeySequencer → Inbox → Handler
+  Handler checkpoints inbox + squeak_counts + contiguous last_offset in one tx
+```
+
+| Piece | Role |
+|-------|------|
+| `TransactionalPublisher` | One SQLite tx: increment `duck_state`, insert `outbox` |
+| `OutboxDispatcher` | Unpublished outbox → `event_log` → mark `published_at` |
+| `LogTailFeeder` | Read `event_log` after offset; `PublishAsync` onto hostile bus |
+| `ConsumerCheckpoint` | Inbox insert + counts + contiguous `last_offset` in one tx |
+| `PerKeySequencer` | Seeded from persisted last seq on restart |
+| Mis-demo | `--mis-demo` still disables inbox **and** sequencer; log/outbox stay on |
+
+`last_offset` is a contiguous prefix (shuffle can deliver offsets out of order). Demo file: `ducknet-kernel.db`; `--reset-db` for a clean start.
+
 ## Changing the kernel
 
-1. Keep producer and consumer coupled only through `IEventBus`.
+1. Keep producer and consumer coupled only through the log/bus. Producer does not reference consumer types.
 2. New middleware wraps the bus — do not fork `IEventBus` per feature.
 3. New consumer state (inbox, sequencer, offsets) is owned by the consumer, not the bus.
-4. Tests: producer isolation, count correctness, then hostility (see PATTERNS.md).
+4. Tests: producer isolation, count correctness, hostility, then crash/restart/replay (see PATTERNS.md).
 
 ## Verify (stop on evidence)
 
 ```bash
 dotnet test
-dotnet run --project src/DuckNet.Kernel -- --run-demo --seconds 5
+dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
 ```
 
-Done when tests pass, demo totals match produced events with `Out of order == 0`, and `docs/architecture/step-N.md` has architecture + execution diagrams (see CLAUDE.md). Do not stop on an arbitrary turn cap.
+Done when tests pass, demo `Log rows == Counted` with `Out of order == 0` on a fresh DB, and `docs/architecture/step-N.md` has architecture + execution diagrams (see CLAUDE.md). Do not stop on an arbitrary turn cap.

@@ -88,3 +88,43 @@ Ordering is per `PartitionKey`, never global. Gap timeout logs only.
 - `dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds 5` — Counted > Published, Out of order > 0
 - Agent: `/run-demo`, `/mis-demo`
 
+## 2026-08-27 — Step 3: durable log + outbox
+
+### What changed
+Producer writes duck seq and outbox in one SQLite transaction. Dispatcher appends `event_log`. Tail feeder publishes through hostile bus (dup + shuffle **after** the log). Consumer checkpoints inbox + counts + contiguous offset together. Kill/restart continues counts; `--reset-db` starts clean.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Sim[DuckSimulator] --> Tx[Tx: state + outbox]
+  Tx --> Dsp[OutboxDispatcher]
+  Dsp --> Log[(event_log)]
+  Log --> Feed[LogTailFeeder]
+  Feed --> Dup[Duplicator]
+  Dup --> Shf[Shuffler]
+  Shf --> Seq[PerKeySequencer]
+  Seq --> Ck[ConsumerCheckpoint]
+  Ck --> C[SqueakCounter]
+```
+
+```mermaid
+sequenceDiagram
+  participant Sim as DuckSimulator
+  participant Tx as TransactionalPublisher
+  participant Dsp as Dispatcher
+  participant Feed as LogTailFeeder
+  participant Ck as Checkpoint
+  Sim->>Tx: state + outbox (one COMMIT)
+  Tx-->>Dsp: unpublished row
+  Dsp->>Dsp: append log + mark published
+  Feed->>Ck: envelope with LogOffset
+  Ck->>Ck: inbox + counts + last_offset (one COMMIT)
+```
+
+### How to test
+- `dotnet test` — crash before commit writes neither side; restart from offset does not double-count; replay from 0 reproduces counts
+- `dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5` — session Published == lifetime Counted == Log rows, Out of order == 0
+- Run again without `--reset-db` — lifetime Counted continues; equals Log rows
+- `dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5` — Counted > Log rows, Out of order > 0
+- Agent: `/run-demo`, `/mis-demo`
+

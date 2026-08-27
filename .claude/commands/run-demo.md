@@ -11,7 +11,7 @@ Run the kernel demo (team-shared, human-triggered).
 2. From the repo root:
 
 ```bash
-dotnet run --project src/DuckNet.Kernel -- --run-demo --seconds <seconds>
+dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds <seconds>
 ```
 
 3. Print the totals. This is a smoke demo, not a substitute for `dotnet test`.

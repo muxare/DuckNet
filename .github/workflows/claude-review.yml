@@ -5,48 +5,172 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  pull-requests: write
   contents: read
+  pull-requests: write
+
+# A rapid series of pushes should not stack up reviews on the same PR.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   review:
+    # Secrets are withheld from fork PRs, so the review cannot authenticate
+    # there. Skip cleanly rather than fail confusingly.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Fetch base branch
-        run: git fetch origin ${{ github.base_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g @anthropic-ai/claude-code@2.1.246
+
+      - name: Build review input
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin "$BASE_REF"
+
+          MAX_BYTES=200000
+          git diff "origin/${BASE_REF}...HEAD" > full.diff
+          DIFF_BYTES=$(wc -c < full.diff)
+          echo "diff size: ${DIFF_BYTES} bytes"
+
+          # The diff is written to a file and fed on stdin, never through argv:
+          # diff content must not be interpreted by the shell, and large diffs
+          # would otherwise exceed the argument limit.
+          {
+            cat .github/prompts/architecture-review.md
+            printf '\n\n## PR diff\n\n```diff\n'
+            head -c "$MAX_BYTES" full.diff
+            printf '\n```\n'
+            if [ "$DIFF_BYTES" -gt "$MAX_BYTES" ]; then
+              printf '\n**NOTE: this diff was TRUNCATED at %s of %s bytes.**\n' \
+                "$MAX_BYTES" "$DIFF_BYTES"
+            fi
+          } > review-input.md
 
       - name: Run architecture review
+        id: review
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          DIFF="$(git diff origin/${{ github.base_ref }}...HEAD)"
-          PROMPT="$(cat .github/prompts/architecture-review.md)"
-          claude -p "${PROMPT}
+          set -uo pipefail
 
-          PR diff:
-          ${DIFF}" \
+          if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set on this repository."
+            echo "claude_exit=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # GitHub runs `run:` under `bash -e`, which would abort this step
+          # before the exit code can be captured. Disable it around the call.
+          set +e
+          claude -p < review-input.md \
+            --output-format json \
+            --json-schema "$(cat .github/schemas/review-verdict.schema.json)" \
+            --permission-mode dontAsk \
+            --tools "Read,Grep,Glob" \
             --allowedTools "Read,Grep,Glob" \
-            > review.md
+            --model sonnet \
+            --max-budget-usd 0.50 \
+            > review.json
+          CLAUDE_EXIT=$?
+          set -e
+          echo "claude_exit=${CLAUDE_EXIT}" >> "$GITHUB_OUTPUT"
+          echo "claude exited with ${CLAUDE_EXIT}"
 
-      - name: Post review comment
+          if [ -s review.json ]; then
+            jq '{is_error, subtype, total_cost_usd, num_turns}' review.json || true
+          fi
+
+          # Do not fail here — the comment step runs first so the PR always
+          # gets feedback. The job is failed at the end if this exited non-zero.
+          exit 0
+
+      - name: Post or update review comment
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const body = fs.existsSync('review.md')
-              ? fs.readFileSync('review.md', 'utf8')
-              : 'Claude review produced no output.';
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `## Claude architecture review\n\n${body}`
+            const MARKER = '<!-- ducknet:claude-architecture-review -->';
+            const cell = s => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+
+            let env = null;
+            try { env = JSON.parse(fs.readFileSync('review.json', 'utf8')); } catch { env = null; }
+
+            const so = env && env.structured_output;
+            let body;
+
+            if (so && typeof so.verdict === 'string') {
+              const approved = so.verdict === 'approve';
+              const out = [`## ${approved ? '✅' : '⚠️'} Claude architecture review — **${approved ? 'approve' : 'request changes'}**`, ''];
+
+              const violations = Array.isArray(so.violations) ? so.violations : [];
+              if (violations.length === 0) {
+                out.push('No architecture rule violations found in this diff.');
+              } else {
+                out.push(`### Violations (${violations.length})`, '');
+                out.push('| Rule | Severity | File | Detail |', '|---|---|---|---|');
+                for (const v of violations) {
+                  out.push(`| ${cell(v.rule)} | ${cell(v.severity)} | ${v.file ? '`' + cell(v.file) + '`' : '—'} | ${cell(v.detail)} |`);
+                }
+              }
+
+              const notes = Array.isArray(so.notes) ? so.notes : [];
+              if (notes.length) {
+                out.push('', '### Notes');
+                for (const n of notes) out.push(`- ${cell(n)}`);
+              }
+
+              const cost = typeof env.total_cost_usd === 'number' ? `$${env.total_cost_usd.toFixed(4)}` : 'n/a';
+              const sha = context.payload.pull_request.head.sha.slice(0, 7);
+              out.push('', `<sub>Advisory only — \`ci.yml\` decides merge. Cost estimate ${cost} · commit ${sha}</sub>`);
+              body = out.join('\n');
+            } else {
+              const raw = env && typeof env.result === 'string' ? env.result : '(no output captured)';
+              body = [
+                '## ⚠️ Claude architecture review — degraded',
+                '',
+                'The review did not return a schema-conforming result, so no verdict is available.',
+                'See the workflow run log for details.',
+                '',
+                '```',
+                raw.slice(0, 4000),
+                '```',
+              ].join('\n');
+            }
+
+            body = `${MARKER}\n${body}\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_`;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
             });
+            const existing = comments.find(c => c.body && c.body.includes(MARKER));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.info(`Updated existing review comment ${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info('Created review comment');
+            }
+
+      - name: Fail if the review could not run
+        # always() so this still runs if the comment step failed.
+        if: always() && steps.review.outputs.claude_exit != '0'
+        run: |
+          echo "::error::The Claude review step failed. This is an infrastructure"
+          echo "::error::failure (auth, network, budget), not a review verdict."
+          exit 1

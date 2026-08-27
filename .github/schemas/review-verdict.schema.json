@@ -1,0 +1,44 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "request_changes"]
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Index of the violated non-negotiable rule in CLAUDE.md (1-5)."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor"]
+          },
+          "file": {
+            "type": "string",
+            "description": "Repository-relative path where the violation occurs."
+          },
+          "detail": {
+            "type": "string",
+            "description": "What was violated and why, in one or two sentences."
+          }
+        },
+        "required": ["rule", "severity", "detail"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Brief constructive feedback for the author. Empty array if none."
+    }
+  },
+  "required": ["verdict", "violations", "notes"],
+  "additionalProperties": false
+}

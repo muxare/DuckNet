@@ -207,9 +207,9 @@ Store payloads as JSON in the log; deserialize with version-aware readers from S
 
 **Acceptance criteria:**
 
-- [ ] With `DUPLICATE_RATE=0.20`, counts remain exact over 10k events.
-- [ ] Duplicate deliveries log at debug: `"Skipping duplicate {EventId}"`.
-- [ ] Inbox survives in-memory only (Phase A Step 1); persistence comes Step 3.
+- [x] With `DUPLICATE_RATE=0.20`, counts remain exact over 10k events.
+- [x] Duplicate deliveries log at debug: `"Skipping duplicate {EventId}"`.
+- [x] Inbox survives in-memory only (Phase A Step 1); persistence comes Step 3.
 
 **Tests:**
 

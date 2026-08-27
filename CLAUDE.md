@@ -17,10 +17,30 @@ Toy domain, real distributed architecture. Smart rubber ducks emit facts; Center
 - Tag on merge: `git tag step-N`
 - Commit format: `feat(step-N): description`
 
-## Layout (Step 0)
+## Step diagrams (required)
+
+When a step’s acceptance criteria pass, create or rewrite [`docs/architecture/step-N.md`](docs/architecture/) from the **code on this branch**, not from the future target. Link it from [`docs/architecture/README.md`](docs/architecture/README.md).
+
+Required Mermaid diagrams in that file:
+
+1. **Architecture** (`flowchart` with subgraphs) — producer, transport, consumer (Centers + DBs from Step 4). Show ownership, `IEventBus` as the only integration seam, and what does *not* connect (no Center-to-Center calls, no shared DB, inbox/sequencer not inside the bus).
+2. **Execution** (`sequenceDiagram`, plus a handler `flowchart` if the step adds a decision) — one event from emit to side effect. Include hostile-transport and mis-demo/failure branches the step **actually implements**.
+
+Also required in the same file:
+
+- **Delta vs previous step** — added / changed / unchanged
+- **Wire types** — `EventEnvelope` fields (and payloads) that matter this step
+
+[`DuckNetArchitectureSteps.html`](./DuckNetArchitectureSteps.html) is the *target* roadmap (all steps). `docs/architecture/step-N.md` is the *as-built* record. If implementation diverges from the HTML, note it in the step file. Do not draw later-step components as if they exist.
+
+Do not skip this when the step is “just wiring”.
+
+## Layout (Step 1)
 
 ```
 src/DuckNet.Kernel/     # single-process kernel until Step 4
+  Transport/            # IEventBus, InMemoryEventBus, DuplicatorMiddleware
+  Consumer/             # Inbox + SqueakCounter
 tests/                  # unit + integration tests
 .github/workflows/      # ci.yml, claude-review.yml, claude.yml
 ```
@@ -31,9 +51,10 @@ tests/                  # unit + integration tests
 dotnet build
 dotnet test
 dotnet run --project src/DuckNet.Kernel -- --run-demo --seconds 5
+dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds 5
 ```
 
-Slash command: `/run-demo` (optional seconds). Format hook: `dotnet format` on `*.cs` after agent edits.
+Slash commands: `/run-demo`, `/mis-demo` (optional seconds). Format hook: `dotnet format` on `*.cs` after agent edits.
 
 ## PR review
 
@@ -71,13 +92,13 @@ DuckNet is a CCA-F study lab. While working, **spot and propose** reusable agent
 
 When you find one, propose the path, frontmatter (`description`, `allowed-tools`, `argument-hint`, `context: fork` if needed), and why. Wait for approval.
 
-Live: skill `ducknet-kernel`, command `/run-demo`, PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-center` (Step 4), `ducknet-event-contract` (Step 6), `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
+Live: skill `ducknet-kernel`, commands `/run-demo` and `/mis-demo`, PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-center` (Step 4), `ducknet-event-contract` (Step 6), `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
 
 ## Step progress
 
 | Step | Status | Branch |
 |------|--------|--------|
 | 0 | complete | `step-0` → `main` |
-| 1 | pending | — |
+| 1 | complete | `step-1` → `main` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

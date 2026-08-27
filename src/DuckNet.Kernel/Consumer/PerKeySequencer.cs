@@ -11,6 +11,24 @@ public sealed class PerKeySequencer
 {
     private readonly Dictionary<string, KeyState> _byKey = new();
 
+    public PerKeySequencer(IReadOnlyDictionary<string, long>? lastHandledSequenceByKey = null)
+    {
+        if (lastHandledSequenceByKey is null)
+        {
+            return;
+        }
+
+        foreach (var (key, seq) in lastHandledSequenceByKey)
+        {
+            if (seq < 0)
+            {
+                continue;
+            }
+
+            _byKey[key] = new KeyState { NextExpected = seq + 1 };
+        }
+    }
+
     public long LateDropCount { get; private set; }
 
     public long BufferedOverwriteCount { get; private set; }

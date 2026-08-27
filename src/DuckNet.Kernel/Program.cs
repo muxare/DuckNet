@@ -16,9 +16,9 @@ var shuffleState = options.ShuffleEnabled
     ? $"on (window={options.ShuffleWindow})"
     : "off";
 Console.WriteLine(
-    $"DuckNet Step 2 — out-of-order + per-key sequencer for {options.Seconds}s (Ctrl+C to stop early)");
+    $"DuckNet Step 3 — durable log + outbox for {options.Seconds}s (Ctrl+C to stop early)");
 Console.WriteLine(
-    $"duplicateRate={options.DuplicateRate.ToString("0.00", CultureInfo.InvariantCulture)} shuffle={shuffleState} inbox={inboxState} sequencer={sequencerState}");
+    $"db={options.DatabasePath} reset={options.ResetDatabase} duplicateRate={options.DuplicateRate.ToString("0.00", CultureInfo.InvariantCulture)} shuffle={shuffleState} inbox={inboxState} sequencer={sequencerState}");
 if (!options.InboxEnabled || !options.SequencerEnabled)
 {
     Console.WriteLine("Mis-demo: consumer defenses off — counts and/or per-key order may be wrong.");
@@ -39,11 +39,15 @@ try
         shuffleEnabled: options.ShuffleEnabled,
         shuffleWindow: options.ShuffleWindow,
         sequencerEnabled: options.SequencerEnabled,
+        databasePath: options.DatabasePath,
+        resetDatabase: options.ResetDatabase,
         cancellationToken: cts.Token);
 
-    Console.WriteLine($"Published:   {result.PublishedCount}");
+    Console.WriteLine($"Published:   {result.PublishedCount} (session)");
     Console.WriteLine($"Duplicates:  {result.DuplicateDeliveries}");
-    Console.WriteLine($"Counted:     {result.TotalCount}");
+    Console.WriteLine($"Counted:     {result.TotalCount} (lifetime)");
+    Console.WriteLine($"Log rows:    {result.LogCount}");
+    Console.WriteLine($"Log offset:  {result.LastOffset}");
     Console.WriteLine($"Inbox skips: {result.DuplicateSkips}");
     Console.WriteLine($"Late drops:  {result.SequencerLateDrops}");
     Console.WriteLine($"Out of order:{result.OutOfOrderCount}");
@@ -64,6 +68,8 @@ catch (OperationCanceledException)
 
 internal static class DemoCli
 {
+    public const string DefaultDatabasePath = "ducknet-kernel.db";
+
     public static DemoCliOptions Parse(string[] args)
     {
         var seconds = 30;
@@ -72,6 +78,8 @@ internal static class DemoCli
         var shuffleEnabled = !IsFalse(Environment.GetEnvironmentVariable("SHUFFLE_ENABLED"));
         var shuffleWindow = ParseWindow(Environment.GetEnvironmentVariable("SHUFFLE_WINDOW"), 50);
         var sequencerEnabled = !IsFalse(Environment.GetEnvironmentVariable("SEQUENCER_ENABLED"));
+        var databasePath = Environment.GetEnvironmentVariable("DUCKNET_DB") ?? DefaultDatabasePath;
+        var resetDatabase = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -113,6 +121,24 @@ internal static class DemoCli
                 continue;
             }
 
+            if (arg is "--reset-db")
+            {
+                resetDatabase = true;
+                continue;
+            }
+
+            if (arg == "--db" && i + 1 < args.Length)
+            {
+                databasePath = args[++i];
+                continue;
+            }
+
+            if (arg.StartsWith("--db=", StringComparison.Ordinal))
+            {
+                databasePath = arg["--db=".Length..];
+                continue;
+            }
+
             if (arg == "--duplicate-rate" && i + 1 < args.Length)
             {
                 duplicateRate = ParseRate(args[++i], duplicateRate);
@@ -143,7 +169,9 @@ internal static class DemoCli
             inboxEnabled,
             shuffleEnabled,
             shuffleWindow,
-            sequencerEnabled);
+            sequencerEnabled,
+            databasePath,
+            resetDatabase);
     }
 
     private static double ParseRate(string? value, double fallback) =>
@@ -168,4 +196,6 @@ internal sealed record DemoCliOptions(
     bool InboxEnabled,
     bool ShuffleEnabled,
     int ShuffleWindow,
-    bool SequencerEnabled);
+    bool SequencerEnabled,
+    string DatabasePath,
+    bool ResetDatabase);

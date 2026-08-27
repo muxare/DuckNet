@@ -39,11 +39,11 @@ Test: feed `(B1, A2, A1)` → per-key order `A1` then `A2`; `B1` independent.
 
 ## Step 3 — Log + outbox
 
-Producer: one transaction for state + outbox row. Dispatcher: unpublished outbox → `event_log` → mark published → bus (or tail the log).
+Producer: one transaction for state + outbox row. Dispatcher: unpublished outbox → `event_log` → mark published. `LogTailFeeder` publishes log rows onto the hostile bus (dup + shuffle **after** log read).
 
-Hostile middleware applies **after** log read, not before append.
+Consumer: handle + inbox + counts + contiguous `last_offset` in one transaction. Kill/restart resumes from offset with no double-count. Sequencer is seeded from persisted last seq.
 
-Consumer: handle + inbox + offset in one transaction. Kill/restart resumes from offset with no double-count.
+Tests: uncommitted tx writes neither side; restart from offset does not double-count; replay from 0 reproduces counts.
 
 ## Anti-patterns
 

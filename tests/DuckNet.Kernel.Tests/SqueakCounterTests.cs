@@ -13,14 +13,14 @@ public class SqueakCounterTests
     {
         var bus = new InMemoryEventBus();
         var counter = new SqueakCounter(bus, "test");
-        var simulator = new DuckSimulator(bus, duckCount: 3, seed: 7);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = counter.RunAsync(cts.Token);
 
-        await simulator.PublishOneAsync("duck-1", cts.Token);
-        await simulator.PublishOneAsync("duck-1", cts.Token);
-        await simulator.PublishOneAsync("duck-2", cts.Token);
+        var at = DateTimeOffset.UtcNow;
+        await bus.PublishAsync(SqueakedEnvelope.Create(new Squeaked("duck-1", 1, at)), cts.Token);
+        await bus.PublishAsync(SqueakedEnvelope.Create(new Squeaked("duck-1", 2, at)), cts.Token);
+        await bus.PublishAsync(SqueakedEnvelope.Create(new Squeaked("duck-2", 1, at)), cts.Token);
 
         await ConsumerWait.UntilCountAsync(counter, expected: 3, cts.Token);
 
@@ -124,6 +124,7 @@ public class SqueakCounterTests
 
         Assert.True(result.PublishedCount > 0);
         Assert.Equal(result.PublishedCount, result.TotalCount);
+        Assert.Equal(result.PublishedCount, result.LogCount);
         Assert.Equal(result.PublishedCount, result.DuplicateDeliveries);
         Assert.Equal(0, result.OutOfOrderCount);
         Assert.Equal(result.TotalCount, result.CountsByDuck.Values.Sum());
@@ -171,5 +172,8 @@ public class SqueakCounterTests
         var ctor = typeof(DuckSimulator).GetConstructors().Single();
         Assert.All(ctor.GetParameters(), p =>
             Assert.DoesNotContain("Consumer", p.ParameterType.FullName ?? string.Empty));
+        Assert.Contains(
+            ctor.GetParameters(),
+            p => p.ParameterType == typeof(DuckNet.Kernel.Producer.TransactionalPublisher));
     }
 }

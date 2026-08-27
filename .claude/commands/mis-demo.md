@@ -11,7 +11,7 @@ Run the kernel mis-demo (team-shared, human-triggered). Inbox and sequencer are 
 2. From the repo root:
 
 ```bash
-dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds <seconds>
+dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds <seconds>
 ```
 
 3. Print the totals. Counted should exceed Published when duplicates were injected; Out of order is usually greater than 0 with shuffle on. This is a teaching demo, not a substitute for `dotnet test`.

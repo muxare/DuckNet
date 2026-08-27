@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current kernel: **Step 2 — out-of-order delivery + per-key sequencer**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current kernel: **Step 3 — durability (append-only log + outbox)**.
 
 ## Rules
 
@@ -23,24 +23,28 @@ dotnet build
 dotnet test
 ```
 
-## Demos (Step 2)
+## Demos (Step 3)
 
-Defenses on — duplicates and shuffle are injected; counts stay exact and per-duck sequence stays monotonic:
+Defenses on — producer writes state+outbox in one transaction; the log is the source of truth; duplicates and shuffle hit the tail feeder. Counts stay exact and survive restart:
 
 ```bash
-dotnet run --project src/DuckNet.Kernel -- --seconds 5
+dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
 ```
+
+Kill the process and run again **without** `--reset-db` — lifetime `Counted` continues from `ducknet-kernel.db` (`Log offset` is the consumer’s contiguous prefix).
 
 Naive consumer — inbox and sequencer off, so totals drift and handles go out of order:
 
 ```bash
-dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds 5
+dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 ```
 
 | Flag / env | Default | Meaning |
 |------------|---------|---------|
 | `--seconds N` | 30 | How long the simulator runs |
-| `--duplicate-rate` / `DUPLICATE_RATE` | 0.15 | Probability a publish is redelivered with the **same** `EventId` |
+| `--db` / `DUCKNET_DB` | `ducknet-kernel.db` | SQLite file for this Center |
+| `--reset-db` | off | Delete the DB before start |
+| `--duplicate-rate` / `DUPLICATE_RATE` | 0.15 | Probability a log-tail publish is redelivered with the **same** `EventId` |
 | `--no-shuffle` / `SHUFFLE_ENABLED=false` | shuffle on | Disable windowed reorder |
 | `--shuffle-window` / `SHUFFLE_WINDOW` | 50 | Shuffle batch size |
 | `--disable-sequencer` / `SEQUENCER_ENABLED=false` | sequencer on | Pass-through; shuffled order reaches the handler |
@@ -49,15 +53,16 @@ dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds 5
 
 Agent shortcuts: `/run-demo` `[seconds]`, `/mis-demo` `[seconds]`.
 
-**What to look for:** with defenses on, `Published == Counted` and `Out of order == 0`. With `--mis-demo`, `Counted > Published` and `Out of order > 0`. Ordering is per duck, never global.
+**What to look for:** with defenses on, `Published (session) == Counted (lifetime)` on a fresh DB, `Log rows == Counted`, and `Out of order == 0`. After a restart without `--reset-db`, lifetime `Counted` equals `Log rows`. With `--mis-demo`, `Counted > Log rows` and `Out of order > 0`. Ordering is per duck, never global.
 
 ## Layout
 
 ```
 src/DuckNet.Kernel/     # single-process kernel until Step 4
-  Transport/            # IEventBus, InMemoryEventBus, DuplicatorMiddleware, ShufflerMiddleware
-  Consumer/             # Inbox + PerKeySequencer + SqueakCounter
-  Producer/             # DuckSimulator
+  Transport/            # IEventBus, hostile wrappers, LogTailFeeder
+  Consumer/             # Inbox + PerKeySequencer + checkpoint
+  Producer/             # DuckSimulator, TransactionalPublisher, OutboxDispatcher
+  Persistence/          # SQLite: log, outbox, inbox, offsets, counts
 tests/                  # unit + integration tests
 .github/workflows/      # ci.yml, claude-review.yml, claude.yml
 ```
@@ -75,8 +80,9 @@ tests/                  # unit + integration tests
 |------|--------|----------------|
 | 0 | complete | One producer, one consumer, counts match |
 | 1 | complete | Forced duplicates + inbox → counts still match |
-| 2 | in progress | Shuffle + per-key sequencer → order and counts still match |
-| 3+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 2 | complete | Shuffle + per-key sequencer → order and counts still match |
+| 3 | in progress | Durable log + outbox → kill/restart, no double-count |
+| 4+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

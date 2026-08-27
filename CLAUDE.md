@@ -35,12 +35,14 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 2)
+## Layout (Step 3)
 
 ```
 src/DuckNet.Kernel/     # single-process kernel until Step 4
-  Transport/            # IEventBus, InMemoryEventBus, DuplicatorMiddleware, ShufflerMiddleware
-  Consumer/             # Inbox + PerKeySequencer + SqueakCounter
+  Transport/            # IEventBus, InMemoryEventBus, Duplicator, Shuffler, LogTailFeeder
+  Consumer/             # Inbox + PerKeySequencer + SqueakCounter + ConsumerCheckpoint
+  Producer/             # DuckSimulator, TransactionalPublisher, OutboxDispatcher
+  Persistence/          # KernelDb, event_log, outbox, inbox, offsets, counts
 tests/                  # unit + integration tests
 .github/workflows/      # ci.yml, claude-review.yml, claude.yml
 ```
@@ -50,8 +52,8 @@ tests/                  # unit + integration tests
 ```bash
 dotnet build
 dotnet test
-dotnet run --project src/DuckNet.Kernel -- --run-demo --seconds 5
-dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds 5
+dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
+dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 ```
 
 Slash commands: `/run-demo`, `/mis-demo` (optional seconds). Format hook: `dotnet format` on `*.cs` after agent edits.
@@ -100,6 +102,7 @@ Live: skill `ducknet-kernel`, commands `/run-demo` and `/mis-demo`, PostToolUse 
 |------|--------|--------|
 | 0 | complete | `step-0` → `main` |
 | 1 | complete | `step-1` → `main` |
-| 2 | in progress | `step-2` |
+| 2 | complete | `step-2` → `main` |
+| 3 | in progress | `step-3` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

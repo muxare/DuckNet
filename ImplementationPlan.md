@@ -314,9 +314,9 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] Kill consumer mid-stream; restart → resumes from offset, no double-count.
-- [ ] Kill producer mid-transaction → no orphaned dual-write (outbox only commits with state).
-- [ ] Full log replay from offset 0 reproduces same handler side effects.
+- [x] Kill consumer mid-stream; restart → resumes from offset, no double-count.
+- [x] Kill producer mid-transaction → no orphaned dual-write (outbox only commits with state).
+- [x] Full log replay from offset 0 reproduces same handler side effects.
 
 **Demo script:**
 

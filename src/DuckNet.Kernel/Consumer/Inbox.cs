@@ -2,7 +2,8 @@ namespace DuckNet.Kernel.Consumer;
 
 /// <summary>
 /// Consumer-owned idempotency set. Dedup key is <c>EventId</c>, not payload.
-/// In-memory for Step 1; Step 3 persists per consumer group.
+/// In-memory for Step 1–2; Step 3 persists per consumer group.
+/// Sequencer may drop late seq before this set is consulted.
 /// </summary>
 public sealed class Inbox
 {

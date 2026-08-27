@@ -25,7 +25,8 @@ public class DuplicatorMiddlewareTests
 
         Assert.Equal(1, counter.TotalCount);
         Assert.Equal(1, bus.DuplicateCount);
-        Assert.Equal(1, inbox.DuplicateSkipCount);
+        Assert.Equal(1, counter.Sequencer!.LateDropCount);
+        Assert.Equal(0, counter.OutOfOrderCount);
     }
 
     [Fact]
@@ -40,11 +41,13 @@ public class DuplicatorMiddlewareTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         _ = counter.RunAsync(cts.Token);
 
+        var seqByDuck = new Dictionary<string, long>();
         for (var i = 0; i < unique; i++)
         {
             var duckId = $"duck-{(i % 5) + 1}";
+            seqByDuck[duckId] = seqByDuck.GetValueOrDefault(duckId) + 1;
             await bus.PublishAsync(
-                SqueakedEnvelope.Create(new Squeaked(duckId, i + 1, DateTimeOffset.UtcNow)),
+                SqueakedEnvelope.Create(new Squeaked(duckId, seqByDuck[duckId], DateTimeOffset.UtcNow)),
                 cts.Token);
         }
 
@@ -52,7 +55,7 @@ public class DuplicatorMiddlewareTests
 
         Assert.True(bus.DuplicateCount > 0);
         Assert.Equal(unique, counter.TotalCount);
-        Assert.Equal(bus.DuplicateCount, inbox.DuplicateSkipCount);
+        Assert.Equal(0, counter.OutOfOrderCount);
         Assert.Equal(unique, counter.CountsByDuck.Values.Sum());
     }
 
@@ -62,7 +65,7 @@ public class DuplicatorMiddlewareTests
         var inner = new InMemoryEventBus();
         var bus = new DuplicatorMiddleware(inner, duplicateRate: 1.0, seed: 1);
         var inbox = new Inbox("test", enabled: false);
-        var counter = new SqueakCounter(bus, "test", inbox);
+        var counter = new SqueakCounter(bus, "test", inbox, sequencerEnabled: false);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = counter.RunAsync(cts.Token);

@@ -34,6 +34,7 @@ public sealed class DuckSimulator
         }
     }
 
+    // PartitionKey = duck id. Sequence is per duck, never global.
     private long NextSequence(string duckId)
     {
         if (!_sequenceByDuck.TryGetValue(duckId, out var sequence))

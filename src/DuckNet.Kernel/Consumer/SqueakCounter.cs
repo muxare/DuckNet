@@ -7,10 +7,13 @@ public sealed class SqueakCounter
     private readonly IEventBus _eventBus;
     private readonly string _consumerGroup;
     private readonly Inbox _inbox;
+    private readonly PerKeySequencer? _sequencer;
+    private readonly TimeSpan _gapTimeout;
     private readonly int _logEvery;
     private readonly bool _logDuplicates;
     private readonly TextWriter _output;
     private readonly Dictionary<string, long> _countsByDuck = new();
+    private readonly Dictionary<string, long> _lastSeqByDuck = new();
 
     public SqueakCounter(
         IEventBus eventBus,
@@ -18,11 +21,16 @@ public sealed class SqueakCounter
         Inbox? inbox = null,
         int logEvery = 50,
         bool logDuplicates = false,
-        TextWriter? output = null)
+        TextWriter? output = null,
+        PerKeySequencer? sequencer = null,
+        bool sequencerEnabled = true,
+        TimeSpan? gapTimeout = null)
     {
         _eventBus = eventBus;
         _consumerGroup = consumerGroup;
         _inbox = inbox ?? new Inbox(consumerGroup);
+        _sequencer = sequencerEnabled ? sequencer ?? new PerKeySequencer() : null;
+        _gapTimeout = gapTimeout ?? TimeSpan.FromSeconds(5);
         _logEvery = logEvery;
         _logDuplicates = logDuplicates;
         _output = output ?? Console.Out;
@@ -31,6 +39,10 @@ public sealed class SqueakCounter
     public long TotalCount { get; private set; }
 
     public long AttemptCount { get; private set; }
+
+    public long OutOfOrderCount { get; private set; }
+
+    public PerKeySequencer? Sequencer => _sequencer;
 
     public IReadOnlyDictionary<string, long> CountsByDuck => _countsByDuck;
 
@@ -45,25 +57,62 @@ public sealed class SqueakCounter
 
             AttemptCount++;
 
-            if (!_inbox.ShouldHandle(envelope.EventId))
+            foreach (var ready in Release(envelope))
             {
-                if (_logDuplicates)
-                {
-                    _output.WriteLine($"Skipping duplicate {envelope.EventId}");
-                }
-
-                continue;
+                HandleReady(ready);
             }
 
-            var squeaked = SqueakedEnvelope.Parse(envelope);
-            TotalCount++;
-            _countsByDuck[squeaked.DuckId] = _countsByDuck.GetValueOrDefault(squeaked.DuckId) + 1;
-            _inbox.MarkProcessed(envelope.EventId);
+            _sequencer?.ReportGaps(_gapTimeout, _output);
+        }
+    }
 
-            if (TotalCount % _logEvery == 0)
+    private IReadOnlyList<EventEnvelope> Release(EventEnvelope envelope)
+    {
+        if (_sequencer is null)
+        {
+            return [envelope];
+        }
+
+        var lateBefore = _sequencer.LateDropCount;
+        var released = _sequencer.Offer(envelope);
+        if (released.Count == 0 && _sequencer.LateDropCount > lateBefore && _logDuplicates)
+        {
+            _output.WriteLine(
+                $"Dropping late seq {envelope.SequenceNumber} for {envelope.PartitionKey} (EventId={envelope.EventId})");
+        }
+
+        return released;
+    }
+
+    private void HandleReady(EventEnvelope envelope)
+    {
+        if (!_inbox.ShouldHandle(envelope.EventId))
+        {
+            if (_logDuplicates)
             {
-                _output.WriteLine($"[SqueakCounter] processed={TotalCount}");
+                _output.WriteLine($"Skipping duplicate {envelope.EventId}");
             }
+
+            return;
+        }
+
+        var squeaked = SqueakedEnvelope.Parse(envelope);
+        var last = _lastSeqByDuck.GetValueOrDefault(squeaked.DuckId, 0);
+        if (squeaked.SequenceNumber != last + 1)
+        {
+            OutOfOrderCount++;
+            _output.WriteLine(
+                $"Out of order {squeaked.DuckId} seq {squeaked.SequenceNumber} after {last}");
+        }
+
+        _lastSeqByDuck[squeaked.DuckId] = squeaked.SequenceNumber;
+        TotalCount++;
+        _countsByDuck[squeaked.DuckId] = _countsByDuck.GetValueOrDefault(squeaked.DuckId) + 1;
+        _inbox.MarkProcessed(envelope.EventId);
+
+        if (TotalCount % _logEvery == 0)
+        {
+            _output.WriteLine($"[SqueakCounter] processed={TotalCount}");
         }
     }
 }

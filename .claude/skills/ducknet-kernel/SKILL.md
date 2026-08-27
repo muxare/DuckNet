@@ -49,6 +49,22 @@ DuckSimulator → DuplicatorMiddleware → Inbox → SqueakCounter
 | `SqueakCounter` | Counts unique squeaks; logs `Skipping duplicate {EventId}` |
 | Mis-demo | `INBOX_ENABLED=false` / `--disable-inbox` — counts drift on purpose |
 
+## Step 2 map
+
+```
+DuckSimulator → DuplicatorMiddleware → ShufflerMiddleware → PerKeySequencer → Inbox → SqueakCounter
+```
+
+| Piece | Role |
+|-------|------|
+| `ShufflerMiddleware` | Wraps `IEventBus`; windowed shuffle (default 50); `FlushAsync` releases the remainder |
+| `PerKeySequencer` | Per `PartitionKey`: emit if `seq == nextExpected`, buffer if ahead, drop if late |
+| Gap timeout | Log after 5s; do **not** invent missing events |
+| `SqueakCounter` | Counts unique squeaks; `OutOfOrderCount` if handle seq ≠ last+1 |
+| Mis-demo | `--mis-demo` disables inbox **and** sequencer — counts drift, order breaks |
+
+Ordering is per `PartitionKey`, never global. Compose: duplicator wraps shuffler wraps `InMemoryEventBus`.
+
 ## Changing the kernel
 
 1. Keep producer and consumer coupled only through `IEventBus`.
@@ -63,4 +79,4 @@ dotnet test
 dotnet run --project src/DuckNet.Kernel -- --run-demo --seconds 5
 ```
 
-Done when tests pass, demo totals match produced events, and `docs/architecture/step-N.md` has architecture + execution diagrams (see CLAUDE.md). Do not stop on an arbitrary turn cap.
+Done when tests pass, demo totals match produced events with `Out of order == 0`, and `docs/architecture/step-N.md` has architecture + execution diagrams (see CLAUDE.md). Do not stop on an arbitrary turn cap.

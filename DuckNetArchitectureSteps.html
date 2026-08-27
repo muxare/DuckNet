@@ -90,7 +90,7 @@ flowchart LR
   classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px
   classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
 </pre></div>
-<p class="delta"><b>Added:</b> shuffled delivery; per-key resequencing. <b>Changed:</b> events carry partition key + sequence number — ordering is per-partition, never global.</p>
+<p class="delta"><b>Added:</b> shuffled delivery; per-key resequencing. <b>Changed:</b> events carry partition key + sequence number — ordering is per-partition, never global. As-built: <a href="docs/architecture/step-2.md">docs/architecture/step-2.md</a>.</p>
 
 <h3>Step 3 — Durability: append-only log + outbox</h3>
 <div class="card"><pre class="mermaid">

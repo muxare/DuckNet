@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current kernel: **Step 1 — at-least-once delivery + idempotent consumer**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current kernel: **Step 2 — out-of-order delivery + per-key sequencer**.
 
 ## Rules
 
@@ -23,15 +23,15 @@ dotnet build
 dotnet test
 ```
 
-## Demos (Step 1)
+## Demos (Step 2)
 
-Inbox on — duplicates are injected, counts stay exact:
+Defenses on — duplicates and shuffle are injected; counts stay exact and per-duck sequence stays monotonic:
 
 ```bash
 dotnet run --project src/DuckNet.Kernel -- --seconds 5
 ```
 
-Inbox off — same hostility, counts drift (the teaching contrast):
+Naive consumer — inbox and sequencer off, so totals drift and handles go out of order:
 
 ```bash
 dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds 5
@@ -41,18 +41,22 @@ dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds 5
 |------------|---------|---------|
 | `--seconds N` | 30 | How long the simulator runs |
 | `--duplicate-rate` / `DUPLICATE_RATE` | 0.15 | Probability a publish is redelivered with the **same** `EventId` |
-| `--mis-demo` / `--disable-inbox` / `INBOX_ENABLED=false` | inbox on | Disable idempotency so totals include duplicates |
+| `--no-shuffle` / `SHUFFLE_ENABLED=false` | shuffle on | Disable windowed reorder |
+| `--shuffle-window` / `SHUFFLE_WINDOW` | 50 | Shuffle batch size |
+| `--disable-sequencer` / `SEQUENCER_ENABLED=false` | sequencer on | Pass-through; shuffled order reaches the handler |
+| `--disable-inbox` / `INBOX_ENABLED=false` | inbox on | Disable idempotency |
+| `--mis-demo` | defenses on | Disable **inbox and sequencer** (teaching contrast) |
 
 Agent shortcuts: `/run-demo` `[seconds]`, `/mis-demo` `[seconds]`.
 
-**What to look for:** with inbox on, `Published == Counted` and `Skipped == Duplicates`. With inbox off, `Counted == Published + Duplicates`.
+**What to look for:** with defenses on, `Published == Counted` and `Out of order == 0`. With `--mis-demo`, `Counted > Published` and `Out of order > 0`. Ordering is per duck, never global.
 
 ## Layout
 
 ```
 src/DuckNet.Kernel/     # single-process kernel until Step 4
-  Transport/            # IEventBus, InMemoryEventBus, DuplicatorMiddleware
-  Consumer/             # Inbox + SqueakCounter
+  Transport/            # IEventBus, InMemoryEventBus, DuplicatorMiddleware, ShufflerMiddleware
+  Consumer/             # Inbox + PerKeySequencer + SqueakCounter
   Producer/             # DuckSimulator
 tests/                  # unit + integration tests
 .github/workflows/      # ci.yml, claude-review.yml, claude.yml
@@ -71,7 +75,8 @@ tests/                  # unit + integration tests
 |------|--------|----------------|
 | 0 | complete | One producer, one consumer, counts match |
 | 1 | complete | Forced duplicates + inbox → counts still match |
-| 2+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 2 | in progress | Shuffle + per-key sequencer → order and counts still match |
+| 3+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

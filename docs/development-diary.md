@@ -50,3 +50,41 @@ Shared `ConsumerWait` in kernel tests. Added `/mis-demo` command. Root `README.m
 
 ### How to test
 Open `docs/architecture/step-1.md` (GitHub Mermaid) or `DuckNetArchitectureSteps.html` in a browser.
+
+## 2026-08-27 — Step 2: shuffle + per-key sequencer
+
+### What changed
+Transport shuffles windows of envelopes. Consumer-owned `PerKeySequencer` restores order per duck. `--mis-demo` now disables inbox **and** sequencer.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Sim[DuckSimulator] --> Dup[DuplicatorMiddleware]
+  Dup --> Shf[ShufflerMiddleware]
+  Shf --> Seq[PerKeySequencer]
+  Seq -->|seq == nextExpected| Inbox[Inbox]
+  Seq -->|seq greater| Buf[per-key buffer]
+  Seq -->|seq less| Late[late drop]
+  Inbox --> C[SqueakCounter]
+```
+
+```mermaid
+sequenceDiagram
+  participant Shf as Shuffler
+  participant Seq as PerKeySequencer
+  participant C as SqueakCounter
+  Shf->>Seq: B1, A2, A1
+  Seq-->>C: B1
+  Seq-->>Seq: buffer A2
+  Seq-->>C: A1 then A2
+  Note over C: OutOfOrderCount = 0
+```
+
+Ordering is per `PartitionKey`, never global. Gap timeout logs only.
+
+### How to test
+- `dotnet test` — `(B1, A2, A1)` reorders per key; shuffle+dup demo → exact totals, zero out-of-order
+- `dotnet run --project src/DuckNet.Kernel -- --seconds 5` — Published == Counted, Out of order == 0
+- `dotnet run --project src/DuckNet.Kernel -- --mis-demo --seconds 5` — Counted > Published, Out of order > 0
+- Agent: `/run-demo`, `/mis-demo`
+

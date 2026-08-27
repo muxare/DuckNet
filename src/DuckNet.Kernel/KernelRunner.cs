@@ -16,28 +16,36 @@ public static class KernelRunner
         bool logDuplicates = false,
         TextWriter? output = null,
         TimeSpan? duplicateMaxDelay = null,
+        bool shuffleEnabled = true,
+        int shuffleWindow = 50,
+        bool sequencerEnabled = true,
         CancellationToken cancellationToken = default)
     {
         var inner = new InMemoryEventBus();
+        var shuffler = new ShufflerMiddleware(inner, shuffleWindow, seed, shuffleEnabled);
         var eventBus = new DuplicatorMiddleware(
-            inner,
+            shuffler,
             duplicateRate,
             seed,
             duplicateMaxDelay ?? TimeSpan.Zero);
         var inbox = new Inbox("squeak-counter", inboxEnabled);
+        var sequencer = sequencerEnabled ? new PerKeySequencer() : null;
         var counter = new SqueakCounter(
             eventBus,
             consumerGroup: "squeak-counter",
             inbox,
             logEvery,
             logDuplicates,
-            output);
+            output,
+            sequencer,
+            sequencerEnabled);
         var simulator = new DuckSimulator(eventBus, duckCount, seed);
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var consumerTask = counter.RunAsync(linked.Token);
         await simulator.RunAsync(duration, cancellationToken);
         await eventBus.FlushAsync();
+        await shuffler.FlushAsync();
 
         var expectedAttempts = simulator.PublishedCount + eventBus.DuplicateCount;
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2);
@@ -61,6 +69,8 @@ public static class KernelRunner
             simulator.PublishedCount,
             eventBus.DuplicateCount,
             inbox.DuplicateSkipCount,
+            sequencer?.LateDropCount ?? 0,
+            counter.OutOfOrderCount,
             new Dictionary<string, long>(counter.CountsByDuck));
     }
 }
@@ -70,4 +80,6 @@ public sealed record RunResult(
     long PublishedCount,
     long DuplicateDeliveries,
     long DuplicateSkips,
+    long SequencerLateDrops,
+    long OutOfOrderCount,
     IReadOnlyDictionary<string, long> CountsByDuck);

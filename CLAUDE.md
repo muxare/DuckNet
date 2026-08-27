@@ -35,12 +35,12 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 1)
+## Layout (Step 2)
 
 ```
 src/DuckNet.Kernel/     # single-process kernel until Step 4
-  Transport/            # IEventBus, InMemoryEventBus, DuplicatorMiddleware
-  Consumer/             # Inbox + SqueakCounter
+  Transport/            # IEventBus, InMemoryEventBus, DuplicatorMiddleware, ShufflerMiddleware
+  Consumer/             # Inbox + PerKeySequencer + SqueakCounter
 tests/                  # unit + integration tests
 .github/workflows/      # ci.yml, claude-review.yml, claude.yml
 ```
@@ -100,5 +100,6 @@ Live: skill `ducknet-kernel`, commands `/run-demo` and `/mis-demo`, PostToolUse 
 |------|--------|--------|
 | 0 | complete | `step-0` → `main` |
 | 1 | complete | `step-1` → `main` |
+| 2 | in progress | `step-2` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

@@ -236,8 +236,8 @@ Store payloads as JSON in the log; deserialize with version-aware readers from S
 
 **Acceptance criteria:**
 
-- [ ] Shuffled + duplicated stream → correct per-duck sequence and totals.
-- [ ] Explicit comment/doc: *ordering is per-partition-key, never global*.
+- [x] Shuffled + duplicated stream → correct per-duck sequence and totals.
+- [x] Explicit comment/doc: *ordering is per-partition-key, never global*.
 
 **Tests:**
 

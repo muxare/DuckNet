@@ -25,7 +25,7 @@
 <body>
 <div class="wrap">
 <h1>DuckNet — Target Architecture, Step by Step</h1>
-<div class="sub">One diagram per step. Green = added this step, amber = modified this step, grey = unchanged. Phase summaries in blue frames.</div>
+<div class="sub">One diagram per step. Green = added this step, amber = modified this step, grey = unchanged. Phase summaries in blue frames. As-built component + execution diagrams for completed steps: <a href="docs/architecture/">docs/architecture/</a>.</div>
 <div class="legend">
   <span><span class="sw" style="background:#d1fae5;border:2px solid #059669"></span>New this step</span>
   <span><span class="sw" style="background:#fef3c7;border:2px solid #b45309"></span>Changed this step</span>
@@ -40,19 +40,42 @@ flowchart LR
   SIM["DuckSimulator<br/>emits Squeaked"]:::newc --> BUS["In-memory bus<br/>Channel&lt;Event&gt;"]:::newc --> CNT["SqueakCounter<br/>prints totals"]:::newc
   classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
 </pre></div>
-<p class="delta"><b>Added:</b> everything. One process, ~150 lines. Producer knows nothing about the consumer.</p>
+<p class="delta"><b>Added:</b> everything. One process, ~150 lines. Producer knows nothing about the consumer. As-built: <a href="docs/architecture/step-0.md">docs/architecture/step-0.md</a>.</p>
+<div class="card"><pre class="mermaid">
+sequenceDiagram
+  participant Sim as DuckSimulator
+  participant Bus as InMemoryEventBus
+  participant Cnt as SqueakCounter
+  Sim->>Bus: PublishAsync Squeaked
+  Bus->>Cnt: SubscribeAsync
+  Cnt->>Cnt: TotalCount++ CountsByDuck++
+</pre></div>
 
 <h3>Step 1 — At-least-once + idempotent consumer</h3>
 <div class="card"><pre class="mermaid">
 flowchart LR
-  SIM["DuckSimulator"]:::old --> BUS["Hostile bus"]:::chg
-  BUS --> DUP["Duplicator<br/>~10-20% redelivery"]:::newc
-  DUP --> INB["Inbox<br/>processed event ids"]:::newc --> CNT["SqueakCounter"]:::old
+  SIM["DuckSimulator"]:::old --> DUP["DuplicatorMiddleware<br/>same EventId, rate P"]:::newc
+  DUP --> BUS["InMemoryEventBus"]:::old
+  BUS --> INB["Inbox<br/>consumer-owned EventId set"]:::newc --> CNT["SqueakCounter"]:::chg
   classDef newc fill:#d1fae5,stroke:#059669,stroke-width:2px
   classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px
   classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
 </pre></div>
-<p class="delta"><b>Added:</b> deliberate duplication in the bus; inbox dedup in the consumer. Count stays exact under duplicates.</p>
+<p class="delta"><b>Added:</b> duplicator wraps the bus (not a second hop); inbox dedup in the consumer. Count stays exact under duplicates. As-built: <a href="docs/architecture/step-1.md">docs/architecture/step-1.md</a>.</p>
+<div class="card"><pre class="mermaid">
+sequenceDiagram
+  participant Sim as DuckSimulator
+  participant Dup as DuplicatorMiddleware
+  participant Cnt as SqueakCounter
+  participant Inb as Inbox
+  Sim->>Dup: PublishAsync EventId=X
+  Dup->>Cnt: original X
+  Dup-->>Cnt: clone X same EventId
+  Cnt->>Inb: ShouldHandle X
+  Inb-->>Cnt: true then MarkProcessed
+  Cnt->>Inb: ShouldHandle X
+  Inb-->>Cnt: false skip duplicate
+</pre></div>
 
 <h3>Step 2 — Out-of-order delivery + per-key ordering</h3>
 <div class="card"><pre class="mermaid">

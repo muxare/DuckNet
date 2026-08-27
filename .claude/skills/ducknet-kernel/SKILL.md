@@ -36,6 +36,19 @@ DuckSimulator → IEventBus (InMemoryEventBus / Channel) → SqueakCounter
 | `SqueakCounter` | Totals; skip unknown `Type` |
 | `KernelRunner` | Headless demo for tests |
 
+## Step 1 map
+
+```
+DuckSimulator → DuplicatorMiddleware → Inbox → SqueakCounter
+```
+
+| Piece | Role |
+|-------|------|
+| `DuplicatorMiddleware` | Wraps `IEventBus`; re-publishes with the **same** `EventId` at rate `P` |
+| `Inbox` | Consumer-owned `HashSet<Guid>`; skip if seen; mark after handle |
+| `SqueakCounter` | Counts unique squeaks; logs `Skipping duplicate {EventId}` |
+| Mis-demo | `INBOX_ENABLED=false` / `--disable-inbox` — counts drift on purpose |
+
 ## Changing the kernel
 
 1. Keep producer and consumer coupled only through `IEventBus`.
@@ -50,4 +63,4 @@ dotnet test
 dotnet run --project src/DuckNet.Kernel -- --run-demo --seconds 5
 ```
 
-Done when tests pass and demo totals match produced events. Do not stop on an arbitrary turn cap.
+Done when tests pass, demo totals match produced events, and `docs/architecture/step-N.md` has architecture + execution diagrams (see CLAUDE.md). Do not stop on an arbitrary turn cap.

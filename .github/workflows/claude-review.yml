@@ -168,7 +168,8 @@ jobs:
             }
 
       - name: Fail if the review could not run
-        if: steps.review.outputs.claude_exit != '0'
+        # always() so this still runs if the comment step failed.
+        if: always() && steps.review.outputs.claude_exit != '0'
         run: |
           echo "::error::The Claude review step failed. This is an infrastructure"
           echo "::error::failure (auth, network, budget), not a review verdict."

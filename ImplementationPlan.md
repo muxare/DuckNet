@@ -751,7 +751,7 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 ### Secrets & environments
 
 - GitHub Environments: `dev`, `prod` (prod requires reviewer approval).
-- Secrets: `ANTHROPIC_API_KEY` (review job), Azure credentials / federated OIDC (`AZURE_CLIENT_ID`, etc.) from Step 12.
+- Secrets: `CLAUDE_CODE_OAUTH_TOKEN` (review job), Azure credentials / federated OIDC (`AZURE_CLIENT_ID`, etc.) from Step 12.
 - Never store connection strings in repo — inject at deploy from Key Vault or GitHub Environment secrets.
 
 **Acceptance criteria:**
@@ -846,7 +846,7 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
              fetch-depth: 0
          - name: Claude review
            env:
-             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+             CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
            run: |
              claude -p "$(cat .github/prompts/architecture-review.md)" \
                --allowedTools "Read,Grep,Glob" \
@@ -865,7 +865,7 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
    Fail the build if any violation severity is "critical".
    ```
 
-4. **GitHub secret** `ANTHROPIC_API_KEY` — store in repo settings.
+4. **GitHub secret** `CLAUDE_CODE_OAUTH_TOKEN` — generate with `claude setup-token`, store in repo settings.
 
 5. **Optional PostToolUse hook** (local dev, D3) — `dotnet format` on edited `.cs` files.
 

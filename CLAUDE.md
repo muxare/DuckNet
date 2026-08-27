@@ -22,7 +22,7 @@ Toy domain, real distributed architecture. Smart rubber ducks emit facts; Center
 ```
 src/DuckNet.Kernel/     # single-process kernel until Step 4
 tests/                  # unit + integration tests
-.github/workflows/      # ci.yml, claude-review.yml
+.github/workflows/      # ci.yml, claude-review.yml, claude.yml
 ```
 
 ## Build & test
@@ -32,6 +32,17 @@ dotnet build
 dotnet test
 dotnet run --project src/DuckNet.Kernel -- --run-demo --seconds 5
 ```
+
+## PR review
+
+Every PR gets a headless Claude review (`claude-review.yml`) against the five
+rules above. It uses `claude -p --output-format json --json-schema` and returns
+`{ verdict, violations[], notes[] }`, posted as one sticky PR comment.
+
+**The review is advisory** — `ci.yml` decides merge. Mention `@claude` on any
+PR or issue to ask questions interactively (`claude.yml`).
+
+Requires the repo secret `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`).
 
 ## Step progress
 

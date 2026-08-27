@@ -1,4 +1,4 @@
-namespace DuckNet.Kernel.Transport;
+namespace DuckNet.Contracts;
 
 public sealed record EventEnvelope(
     Guid EventId,

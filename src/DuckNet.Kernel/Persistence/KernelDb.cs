@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 namespace DuckNet.Kernel.Persistence;
 
 /// <summary>
-/// Single-file SQLite for this Center (one process until Step 4).
+/// Single-file SQLite for one Center. Schema is per Center — never share a file.
 /// All reads and writes share one connection and are serialized.
 /// </summary>
 public sealed class KernelDb : IDisposable
@@ -11,14 +11,20 @@ public sealed class KernelDb : IDisposable
     private readonly SqliteConnection _connection;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    private KernelDb(SqliteConnection connection)
+    private KernelDb(SqliteConnection connection, string dataSource)
     {
         _connection = connection;
+        DataSource = dataSource;
     }
 
-    public static KernelDb Open(string path)
+    public string DataSource { get; }
+
+    public static KernelDb Open(string path) => Open(path, CenterSchema.Telemetry);
+
+    public static KernelDb Open(string path, string schema)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
 
         var builder = new SqliteConnectionStringBuilder { DataSource = path };
         var connection = new SqliteConnection(builder.ConnectionString);
@@ -29,16 +35,19 @@ public sealed class KernelDb : IDisposable
             pragma.ExecuteNonQuery();
         }
 
-        EnsureSchema(connection);
-        return new KernelDb(connection);
+        EnsureSchema(connection, schema);
+        return new KernelDb(connection, path);
     }
 
-    public static KernelDb OpenInMemory()
+    public static KernelDb OpenInMemory() => OpenInMemory(CenterSchema.Telemetry);
+
+    public static KernelDb OpenInMemory(string schema)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
-        EnsureSchema(connection);
-        return new KernelDb(connection);
+        EnsureSchema(connection, schema);
+        return new KernelDb(connection, ":memory:");
     }
 
     public T Write<T>(Func<SqliteConnection, SqliteTransaction, T> work)
@@ -93,62 +102,31 @@ public sealed class KernelDb : IDisposable
         }
     }
 
+    public IReadOnlyList<string> TableNames() =>
+        Read(conn =>
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name";
+            var names = new List<string>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                names.Add(reader.GetString(0));
+            }
+
+            return names;
+        });
+
     public void Dispose()
     {
         _connection.Dispose();
         _gate.Dispose();
     }
 
-    private static void EnsureSchema(SqliteConnection connection)
+    private static void EnsureSchema(SqliteConnection connection, string schema)
     {
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            CREATE TABLE IF NOT EXISTS event_log (
-              offset INTEGER PRIMARY KEY AUTOINCREMENT,
-              event_id TEXT NOT NULL UNIQUE,
-              partition_key TEXT NOT NULL,
-              type TEXT NOT NULL,
-              version INTEGER NOT NULL,
-              sequence_number INTEGER NOT NULL,
-              payload_json TEXT NOT NULL,
-              occurred_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS outbox (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              event_id TEXT NOT NULL,
-              payload_json TEXT NOT NULL,
-              published_at TEXT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS outbox_unpublished
-              ON outbox (id) WHERE published_at IS NULL;
-
-            CREATE TABLE IF NOT EXISTS consumer_offsets (
-              consumer_group TEXT PRIMARY KEY,
-              last_offset INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS inbox (
-              consumer_group TEXT NOT NULL,
-              event_id TEXT NOT NULL,
-              processed_at TEXT NOT NULL,
-              PRIMARY KEY (consumer_group, event_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS duck_state (
-              duck_id TEXT PRIMARY KEY,
-              last_seq INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS squeak_counts (
-              consumer_group TEXT NOT NULL,
-              duck_id TEXT NOT NULL,
-              count INTEGER NOT NULL,
-              last_seq INTEGER NOT NULL,
-              PRIMARY KEY (consumer_group, duck_id)
-            );
-            """;
+        cmd.CommandText = schema;
         cmd.ExecuteNonQuery();
     }
 }

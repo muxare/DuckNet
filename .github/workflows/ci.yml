@@ -26,5 +26,10 @@ jobs:
       - name: Test
         run: dotnet test DuckNet.slnx --no-build -c Release --verbosity normal
 
-      - name: Demo smoke (Step 3)
+      - name: Demo smoke (Step 3 kernel)
         run: dotnet run --project src/DuckNet.Kernel/DuckNet.Kernel.csproj -c Release --no-build -- --reset-db --seconds 2
+
+      - name: Docker build Centers
+        run: |
+          docker build -f infra/docker/DuckNet.TelemetryCenter/Dockerfile -t ducknet-telemetry:ci .
+          docker build -f infra/docker/DuckNet.AlarmCenter/Dockerfile -t ducknet-alarm:ci .

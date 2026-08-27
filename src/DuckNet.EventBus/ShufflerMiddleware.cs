@@ -1,4 +1,6 @@
-namespace DuckNet.Kernel.Transport;
+using DuckNet.Contracts;
+
+namespace DuckNet.EventBus;
 
 /// <summary>
 /// Hostile transport: unordered across keys. Windowed shuffle — never a global order guarantee.

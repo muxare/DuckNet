@@ -1,4 +1,5 @@
-using DuckNet.Kernel.Transport;
+using DuckNet.Contracts;
+using DuckNet.EventBus;
 using Microsoft.Data.Sqlite;
 
 namespace DuckNet.Kernel.Persistence;

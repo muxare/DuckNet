@@ -1,5 +1,5 @@
-using System.Globalization;
-using DuckNet.Kernel.Transport;
+using DuckNet.Contracts;
+using DuckNet.EventBus;
 using Microsoft.Data.Sqlite;
 
 namespace DuckNet.Kernel.Persistence;
@@ -54,7 +54,9 @@ public sealed class EventLogStore
                 Version: reader.GetInt32(4),
                 PartitionKey: reader.GetString(2),
                 SequenceNumber: reader.GetInt64(5),
-                OccurredAt: DateTimeOffset.Parse(reader.GetString(7), CultureInfo.InvariantCulture),
+                OccurredAt: DateTimeOffset.Parse(
+                    reader.GetString(7),
+                    System.Globalization.CultureInfo.InvariantCulture),
                 PayloadJson: reader.GetString(6),
                 LogOffset: reader.GetInt64(0)));
         }

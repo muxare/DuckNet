@@ -1,3 +1,5 @@
+using DuckNet.Contracts;
+using DuckNet.EventBus;
 using DuckNet.Kernel.Persistence;
 
 namespace DuckNet.Kernel.Transport;

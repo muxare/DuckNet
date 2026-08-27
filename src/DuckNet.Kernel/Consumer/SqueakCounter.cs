@@ -1,5 +1,6 @@
+using DuckNet.Contracts;
+using DuckNet.EventBus;
 using DuckNet.Kernel.Persistence;
-using DuckNet.Kernel.Transport;
 
 namespace DuckNet.Kernel.Consumer;
 
@@ -122,7 +123,7 @@ public sealed class SqueakCounter
         LogProgress();
     }
 
-    private void HandleDurable(EventEnvelope envelope, Domain.Events.Squeaked squeaked)
+    private void HandleDurable(EventEnvelope envelope, Squeaked squeaked)
     {
         var last = _lastSeqByDuck.GetValueOrDefault(squeaked.DuckId, 0);
         var applied = _checkpoint!.TryCommit(new EventEnvelopeHandle(
@@ -150,7 +151,7 @@ public sealed class SqueakCounter
         LogProgress();
     }
 
-    private void ApplySideEffect(Domain.Events.Squeaked squeaked)
+    private void ApplySideEffect(Squeaked squeaked)
     {
         var last = _lastSeqByDuck.GetValueOrDefault(squeaked.DuckId, 0);
         if (squeaked.SequenceNumber != last + 1)

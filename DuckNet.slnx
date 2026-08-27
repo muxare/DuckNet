@@ -1,8 +1,14 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/DuckNet.AppHost/DuckNet.AppHost.csproj" />
+    <Project Path="src/DuckNet.AlarmCenter/DuckNet.AlarmCenter.csproj" />
+    <Project Path="src/DuckNet.Contracts/DuckNet.Contracts.csproj" />
+    <Project Path="src/DuckNet.EventBus/DuckNet.EventBus.csproj" />
     <Project Path="src/DuckNet.Kernel/DuckNet.Kernel.csproj" />
+    <Project Path="src/DuckNet.TelemetryCenter/DuckNet.TelemetryCenter.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/DuckNet.AlarmCenter.Tests/DuckNet.AlarmCenter.Tests.csproj" />
     <Project Path="tests/DuckNet.Kernel.Tests/DuckNet.Kernel.Tests.csproj" />
   </Folder>
 </Solution>

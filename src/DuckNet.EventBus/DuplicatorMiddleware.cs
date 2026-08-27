@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
+using DuckNet.Contracts;
 
-namespace DuckNet.Kernel.Transport;
+namespace DuckNet.EventBus;
 
 /// <summary>
 /// Hostile transport: at-least-once redelivery. Clones keep the same <c>EventId</c>

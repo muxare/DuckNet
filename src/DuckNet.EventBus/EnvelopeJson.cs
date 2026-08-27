@@ -1,11 +1,11 @@
 using System.Text.Json;
-using DuckNet.Kernel.Transport;
+using DuckNet.Contracts;
 
-namespace DuckNet.Kernel.Persistence;
+namespace DuckNet.EventBus;
 
-internal static class EnvelopeJson
+public static class EnvelopeJson
 {
-    private static readonly JsonSerializerOptions Options = new()
+    public static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true

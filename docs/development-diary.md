@@ -128,3 +128,35 @@ sequenceDiagram
 - `dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5` — Counted > Log rows, Out of order > 0
 - Agent: `/run-demo`, `/mis-demo`
 
+## 2026-08-27 — Step 4: second Center, own database (Aspire)
+
+### What changed
+Split into TelemetryCenter + AlarmCenter under Aspire. Telemetry owns `event_log`. AlarmCenter tails/appends via `GET/POST /bus/events` (`HttpLogClient`) and never opens Telemetry SQLite. Rate window is event-time; crossing `ALARM_RATE_THRESHOLD` publishes `AlarmRaised` through Alarm's local outbox.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Sim[DuckSimulator] --> Tdb[(telemetry.db)]
+  Tdb --> Bus["/bus/events"]
+  Bus --> Alm[AlarmConsumer]
+  Alm --> Adb[(alarm.db)]
+  Adb -->|AlarmRaised outbox| Bus
+```
+
+```mermaid
+sequenceDiagram
+  participant Tel as Telemetry
+  participant Log as event_log
+  participant Alm as AlarmCenter
+  Tel->>Log: Squeaked
+  Note over Alm: optional downtime
+  Alm->>Log: GET after last_offset
+  Alm->>Alm: window > threshold
+  Alm->>Log: POST AlarmRaised
+```
+
+### How to test
+- `dotnet test` — isolation (no Center csproj refs; Alarm schema has no `event_log`); threshold crossing; catch-up from HTTP log
+- `dotnet run --project src/DuckNet.AppHost` — both services healthy; stop alarm, restart, `/alarms` catches up
+- Agent: `/run-aspire`
+

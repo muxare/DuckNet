@@ -401,9 +401,9 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] Delete/truncate read model DB → run rebuild → identical row counts to pre-delete snapshot.
-- [ ] Projector handles duplicate events (inbox or upsert idempotency).
-- [ ] DashboardCenter never writes to Telemetry or Alarm DBs.
+- [x] Delete/truncate read model DB → run rebuild → identical row counts to pre-delete snapshot.
+- [x] Projector handles duplicate events (inbox or upsert idempotency).
+- [x] DashboardCenter never writes to Telemetry or Alarm DBs.
 
 **Tests:**
 

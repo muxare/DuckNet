@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DuckNet.Contracts\DuckNet.Contracts.csproj" />
+    <ProjectReference Include="..\DuckNet.EventBus\DuckNet.EventBus.csproj" />
+    <ProjectReference Include="..\DuckNet.Kernel\DuckNet.Kernel.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,161 @@
+using DuckNet.EventBus;
+using DuckNet.Kernel;
+using DuckNet.Kernel.Consumer;
+using DuckNet.Kernel.Persistence;
+
+namespace DuckNet.DashboardCenter;
+
+public static class DashboardApp
+{
+    public static WebApplication Create(string[] args, DashboardOptions? options = null)
+    {
+        var opts = options ?? DashboardOptions.FromConfiguration(args);
+        ArgumentException.ThrowIfNullOrWhiteSpace(opts.EventLogUrl);
+
+        var builder = WebApplication.CreateBuilder(args);
+        if (!string.IsNullOrWhiteSpace(opts.Urls))
+        {
+            builder.WebHost.UseUrls(opts.Urls);
+        }
+
+        if (opts.ResetDatabase)
+        {
+            KernelRunner.DeleteSqliteFiles(opts.DatabasePath);
+        }
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(opts.DatabasePath));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var db = KernelDb.Open(opts.DatabasePath, CenterSchema.Dashboard);
+        var inbox = new Inbox(DashboardConsumer.ConsumerGroup, enabled: true, db);
+        var offsets = new ConsumerOffsetStore(db, DashboardConsumer.ConsumerGroup);
+        var readModel = new DashboardReadModel();
+
+        var inner = new InMemoryEventBus();
+        var shuffler = new ShufflerMiddleware(inner, opts.ShuffleWindow, seed: 42, opts.ShuffleEnabled);
+        var duplicator = new DuplicatorMiddleware(
+            shuffler,
+            opts.DuplicateRate,
+            seed: 42,
+            maxDelay: TimeSpan.FromMilliseconds(40));
+
+        builder.Services.AddHttpClient<HttpLogClient>(client =>
+        {
+            client.BaseAddress = new Uri(EnsureTrailingSlash(opts.EventLogUrl));
+        });
+
+        builder.Services.AddSingleton(db);
+        builder.Services.AddSingleton(opts);
+        builder.Services.AddSingleton(inbox);
+        builder.Services.AddSingleton(offsets);
+        builder.Services.AddSingleton(readModel);
+        builder.Services.AddSingleton(inner);
+        builder.Services.AddSingleton<IEventBus>(duplicator);
+        builder.Services.AddSingleton(duplicator);
+        builder.Services.AddSingleton(shuffler);
+        builder.Services.AddSingleton(sp => new HttpLogTailFeeder(
+            sp.GetRequiredService<HttpLogClient>(),
+            duplicator,
+            startOffset: offsets.LastOffset));
+        builder.Services.AddSingleton(sp => new DashboardConsumer(
+            inner,
+            db,
+            inbox,
+            offsets,
+            readModel,
+            sp.GetRequiredService<HttpLogTailFeeder>()));
+
+        builder.Services.AddHostedService<DashboardFeederHostedService>();
+        builder.Services.AddHostedService<DashboardConsumerHostedService>();
+
+        var app = builder.Build();
+        app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "dashboard" }));
+        app.MapGet("/dashboard/summary", (KernelDb kernelDb, DashboardReadModel model) =>
+        {
+            var rows = kernelDb.Read(conn => model.List(conn));
+            var total = kernelDb.Read(conn => model.TotalCount(conn));
+            return Results.Json(new DashboardSummary(rows, total, rows.Count));
+        });
+        app.MapGet("/dashboard/duck/{id}", (string id, KernelDb kernelDb, DashboardReadModel model) =>
+        {
+            var rows = kernelDb.Read(conn => model.List(conn, id));
+            return Results.Json(rows);
+        });
+        app.MapPost("/dashboard/rebuild", async (DashboardConsumer consumer, CancellationToken ct) =>
+        {
+            await consumer.RebuildAsync(ct);
+            return Results.Accepted(value: new { status = "replaying" });
+        });
+        app.MapGet("/stats", (KernelDb kernelDb, DashboardReadModel model, ConsumerOffsetStore offsetStore) =>
+        {
+            var total = kernelDb.Read(conn => model.TotalCount(conn));
+            var rows = kernelDb.Read(conn => model.List(conn));
+            return Results.Json(new
+            {
+                totalSqueaks = total,
+                rowCount = rows.Count,
+                lastOffset = offsetStore.LastOffset,
+                database = kernelDb.DataSource
+            });
+        });
+
+        return app;
+    }
+
+    private static string EnsureTrailingSlash(string url) =>
+        url.EndsWith('/') ? url : url + "/";
+}
+
+public sealed record DashboardSummary(
+    IReadOnlyList<SqueakHourRow> Rows,
+    long TotalSqueaks,
+    int RowCount);
+
+public sealed record DashboardOptions(
+    string DatabasePath,
+    bool ResetDatabase,
+    string EventLogUrl,
+    double DuplicateRate,
+    bool ShuffleEnabled,
+    int ShuffleWindow,
+    string? Urls)
+{
+    public static DashboardOptions FromConfiguration(string[] args)
+    {
+        var config = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
+            .AddCommandLine(args)
+            .Build();
+
+        var eventLogUrl = config["EVENT_LOG_URL"]
+            ?? config["services:telemetry:http:0"]
+            ?? "";
+
+        return new DashboardOptions(
+            DatabasePath: config["DUCKNET_DB"] ?? "dashboard.db",
+            ResetDatabase: IsTrue(config["RESET_DB"]),
+            EventLogUrl: eventLogUrl,
+            DuplicateRate: ParseRate(config["DUPLICATE_RATE"], 0.15),
+            ShuffleEnabled: !IsFalse(config["SHUFFLE_ENABLED"]),
+            ShuffleWindow: ParseInt(config["SHUFFLE_WINDOW"], 50),
+            Urls: config["URLS"]);
+    }
+
+    private static bool IsTrue(string? value) =>
+        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+
+    private static bool IsFalse(string? value) =>
+        string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) || value == "0";
+
+    private static int ParseInt(string? value, int fallback) =>
+        int.TryParse(value, out var parsed) ? parsed : fallback;
+
+    private static double ParseRate(string? value, double fallback) =>
+        double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+        && parsed is >= 0 and <= 1
+            ? parsed
+            : fallback;
+}

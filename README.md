@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 4 — second Center (Aspire)**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 5 — CQRS disposable read model**.
 
 ## Rules
 
@@ -25,15 +25,17 @@ dotnet test
 
 ## Demos
 
-### Step 4 — two Centers (Aspire)
+### Step 5 — three Centers, disposable dashboard (Aspire)
 
-TelemetryCenter publishes `Squeaked` into its log. AlarmCenter tails that log over HTTP (`IEventBus`), never opens Telemetry's SQLite, and raises `AlarmRaised` when a duck exceeds `ALARM_RATE_THRESHOLD` squeaks in `ALARM_WINDOW_SECONDS` (event time).
+TelemetryCenter publishes `Squeaked` into its log. AlarmCenter raises `AlarmRaised` from a rate window. DashboardCenter projects `squeaks_by_duck_hour` and can be deleted and rebuilt from the log.
 
 ```bash
 dotnet run --project src/DuckNet.AppHost
 ```
 
-Aspire dashboard: both `telemetry` and `alarm` healthy. Stop `alarm`, wait for a burst, start it again — `GET /alarms` on AlarmCenter fills in from the log.
+Aspire dashboard: `telemetry`, `alarm`, and `dashboard` healthy. `GET /dashboard/summary` on DashboardCenter. `POST /dashboard/rebuild` truncates the read model and replays from offset 0 — same rows.
+
+Stop `alarm`, wait for a burst, start it again — `GET /alarms` still fills in from the log (Step 4).
 
 | Knob | Default | Meaning |
 |------|---------|---------|
@@ -62,7 +64,7 @@ Agent shortcuts: `/run-demo`, `/mis-demo`.
 
 **What to look for (kernel):** with defenses on, `Published (session) == Counted (lifetime)` on a fresh DB, `Log rows == Counted`, and `Out of order == 0`.
 
-**What to look for (Aspire):** AlarmCenter `/stats` `database` is `alarm.db`, never `telemetry.db`. After a squeak storm, `/alarms` lists ducks that crossed the threshold.
+**What to look for (Aspire):** DashboardCenter `/stats` `database` is `dashboard.db`, never `telemetry.db`. After rebuild, `/dashboard/summary` totals match the pre-rebuild snapshot. AlarmCenter `/alarms` still lists threshold crossings.
 
 ## Layout
 
@@ -73,6 +75,7 @@ src/DuckNet.EventBus/         # IEventBus + HTTP log adapter
 src/DuckNet.Kernel/           # durable primitives + Step 3 console
 src/DuckNet.TelemetryCenter/  # owns event_log
 src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised
+src/DuckNet.DashboardCenter/  # disposable read model + rebuild
 tests/
 infra/docker/                 # one image per Center
 ```
@@ -92,8 +95,9 @@ infra/docker/                 # one image per Center
 | 1 | complete | Forced duplicates + inbox → counts still match |
 | 2 | complete | Shuffle + per-key sequencer → order and counts still match |
 | 3 | complete | Durable log + outbox → kill/restart, no double-count |
-| 4 | in progress | Two Centers, two DBs; Alarm catches up from the log |
-| 5+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 4 | complete | Two Centers, two DBs; Alarm catches up from the log |
+| 5 | in progress | Delete the dashboard, rebuild from the log |
+| 6+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

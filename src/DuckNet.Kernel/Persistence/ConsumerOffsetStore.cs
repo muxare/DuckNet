@@ -55,6 +55,19 @@ public sealed class ConsumerOffsetStore
         return _lastOffset;
     }
 
+    public long Reset(SqliteConnection connection, SqliteTransaction tx)
+    {
+        _pending.Clear();
+        _lastOffset = 0;
+
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "DELETE FROM consumer_offsets WHERE consumer_group = $g";
+        cmd.Parameters.AddWithValue("$g", ConsumerGroup);
+        cmd.ExecuteNonQuery();
+        return _lastOffset;
+    }
+
     private static long Read(SqliteConnection connection, string consumerGroup)
     {
         using var cmd = connection.CreateCommand();

@@ -103,4 +103,25 @@ public static class CenterSchema
           event_id TEXT NOT NULL UNIQUE
         );
         """;
+
+    public const string Dashboard = """
+        CREATE TABLE IF NOT EXISTS consumer_offsets (
+          consumer_group TEXT PRIMARY KEY,
+          last_offset INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS inbox (
+          consumer_group TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          processed_at TEXT NOT NULL,
+          PRIMARY KEY (consumer_group, event_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS squeaks_by_duck_hour (
+          duck_id TEXT NOT NULL,
+          hour_utc TEXT NOT NULL,
+          count INTEGER NOT NULL,
+          PRIMARY KEY (duck_id, hour_utc)
+        );
+        """;
 }

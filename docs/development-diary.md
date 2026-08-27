@@ -1,5 +1,7 @@
 # Development diary
 
+After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
+
 ## 2026-08-27 — Cheaper Claude PR reviews
 
 ### What changed
@@ -192,4 +194,46 @@ sequenceDiagram
 - `dotnet test` — isolation (no Center csproj refs; Alarm schema has no `event_log`); threshold crossing; catch-up from HTTP log
 - `dotnet run --project src/DuckNet.AppHost` — both services healthy; stop alarm, restart, `/alarms` catches up
 - Agent: `/run-aspire`
+
+## 2026-08-27 — Step 5: CQRS disposable read model
+
+### What changed
+DashboardCenter projects `squeaks_by_duck_hour` from `Squeaked` via `IEventBus` (HTTP log tail). It never writes the log. `POST /dashboard/rebuild` truncates the read model + inbox, resets offset to 0, and replays. Same rows come back.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Tel[TelemetryCenter] --> Log[("event_log")]
+  Log -->|GET /bus/events| Dash[DashboardConsumer]
+  Dash --> RM[("squeaks_by_duck_hour")]
+  RB[POST /dashboard/rebuild] -->|truncate + offset 0| RM
+```
+
+```mermaid
+sequenceDiagram
+  participant Tel as Telemetry
+  participant Log as event_log
+  participant Dash as DashboardCenter
+  Tel->>Log: Squeaked
+  Dash->>Log: GET after last_offset
+  Dash->>Dash: inbox + upsert hour count
+  Note over Dash: POST /dashboard/rebuild
+  Dash->>Dash: truncate, replay from 0
+```
+
+### How to test
+- `dotnet test` — isolation; duplicate EventId counts once; 1000 events → rebuild → deep-equal summary
+- `dotnet run --project src/DuckNet.AppHost` — `GET /dashboard/summary`; `POST /dashboard/rebuild`; rows refill
+- Agent: `/run-aspire`
+
+### Follow-ups
+**Vs the plan:** no Dashboard outbox (projector does not publish). No `PerKeySequencer` — hour counts are commutative; inbox + contiguous offset still survive dup/shuffle.
+
+**Concerns:** rebuild holds the consumer lock, then `HttpLogTailFeeder.ResetTo(0)`. Leftover in-memory envelopes are counted once via inbox. Worth a glance in a live Aspire session (tests cover equality, not the host).
+
+**Refactors (not done):** Alarm vs Dashboard App composition (hostile pipeline + HTTP feeder) is copy-paste-shaped. Extract if a fourth Center copies it again.
+
+**CCA-F (needs OK):**
+- Command `.claude/commands/rebuild-dashboard.md` — curl `POST /dashboard/rebuild` against running Aspire
+- Skill `ducknet-center`: projector-only Centers omit outbox
 

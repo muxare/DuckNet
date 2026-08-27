@@ -35,10 +35,10 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 4)
+## Layout (Step 5)
 
 ```
-src/DuckNet.AppHost/          # Aspire: telemetry + alarm
+src/DuckNet.AppHost/          # Aspire: telemetry + alarm + dashboard
 src/DuckNet.Contracts/        # EventEnvelope, Squeaked, AlarmRaised
 src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient
 src/DuckNet.Kernel/           # primitives + Step 3 console
@@ -48,7 +48,8 @@ src/DuckNet.Kernel/           # primitives + Step 3 console
   Persistence/                # KernelDb + per-Center schema
 src/DuckNet.TelemetryCenter/  # owns event_log writes; GET/POST /bus/events
 src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox
-tests/                        # kernel + AlarmCenter isolation/catch-up
+src/DuckNet.DashboardCenter/  # own DB; squeaks_by_duck_hour; POST /dashboard/rebuild
+tests/                        # kernel + AlarmCenter + DashboardCenter
 infra/docker/                 # one Dockerfile per Center
 .github/workflows/            # ci.yml, claude-review.yml, deploy-center.yml
 ```
@@ -62,7 +63,7 @@ dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
 dotnet run --project src/DuckNet.AppHost
 ```
 
-Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 4). Format hook: `dotnet format` on `*.cs` after agent edits.
+Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 5). Format hook: `dotnet format` on `*.cs` after agent edits.
 
 ## PR review
 
@@ -118,6 +119,7 @@ Live: skills `ducknet-kernel` and `ducknet-center`, commands `/run-demo`, `/mis-
 | 1 | complete | `step-1` → `main` |
 | 2 | complete | `step-2` → `main` |
 | 3 | complete | `step-3` → `main` |
-| 4 | in progress | `step-4` |
+| 4 | complete | `step-4` → `main` |
+| 5 | in progress | `step-5` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

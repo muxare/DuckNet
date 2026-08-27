@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": ".claude/hooks/format-cs.sh",
+        "timeout": 30
+      }
+    ]
+  }
+}

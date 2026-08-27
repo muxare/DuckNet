@@ -33,6 +33,8 @@ dotnet test
 dotnet run --project src/DuckNet.Kernel -- --run-demo --seconds 5
 ```
 
+Slash command: `/run-demo` (optional seconds). Format hook: `dotnet format` on `*.cs` after agent edits.
+
 ## PR review
 
 Every PR gets a headless Claude review (`claude-review.yml`) against the five
@@ -69,7 +71,7 @@ DuckNet is a CCA-F study lab. While working, **spot and propose** reusable agent
 
 When you find one, propose the path, frontmatter (`description`, `allowed-tools`, `argument-hint`, `context: fork` if needed), and why. Wait for approval.
 
-Planned skills (add when the step lands): `ducknet-kernel` (Step 0), `ducknet-center` (Step 4), `ducknet-event-contract` (Step 6), `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
+Live: skill `ducknet-kernel`, command `/run-demo`, PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-center` (Step 4), `ducknet-event-contract` (Step 6), `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
 
 ## Step progress
 

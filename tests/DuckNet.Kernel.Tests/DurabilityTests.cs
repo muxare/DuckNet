@@ -1,6 +1,7 @@
+using DuckNet.Contracts;
+using DuckNet.EventBus;
 using DuckNet.Kernel;
 using DuckNet.Kernel.Consumer;
-using DuckNet.Kernel.Domain.Events;
 using DuckNet.Kernel.Persistence;
 using DuckNet.Kernel.Producer;
 using DuckNet.Kernel.Transport;

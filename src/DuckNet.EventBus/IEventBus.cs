@@ -1,4 +1,6 @@
-namespace DuckNet.Kernel.Transport;
+using DuckNet.Contracts;
+
+namespace DuckNet.EventBus;
 
 public interface IEventBus
 {

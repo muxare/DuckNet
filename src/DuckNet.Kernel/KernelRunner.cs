@@ -1,3 +1,4 @@
+using DuckNet.EventBus;
 using DuckNet.Kernel.Consumer;
 using DuckNet.Kernel.Persistence;
 using DuckNet.Kernel.Producer;

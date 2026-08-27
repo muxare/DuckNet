@@ -367,9 +367,9 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] Stop AlarmCenter 60s; TelemetryCenter keeps publishing; restart AlarmCenter → catches up, alarms fire for qualifying ducks.
-- [ ] No synchronous HTTP between Centers.
-- [ ] Aspire dashboard shows both services healthy.
+- [x] Stop AlarmCenter 60s; TelemetryCenter keeps publishing; restart AlarmCenter → catches up, alarms fire for qualifying ducks.
+- [x] No synchronous HTTP between Centers.
+- [x] Aspire dashboard shows both services healthy.
 
 **Demo script:** Stop alarm service → squeak storm → restart → alarm backlog drains.
 

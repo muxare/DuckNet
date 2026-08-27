@@ -35,16 +35,22 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 3)
+## Layout (Step 4)
 
 ```
-src/DuckNet.Kernel/     # single-process kernel until Step 4
-  Transport/            # IEventBus, InMemoryEventBus, Duplicator, Shuffler, LogTailFeeder
-  Consumer/             # Inbox + PerKeySequencer + SqueakCounter + ConsumerCheckpoint
-  Producer/             # DuckSimulator, TransactionalPublisher, OutboxDispatcher
-  Persistence/          # KernelDb, event_log, outbox, inbox, offsets, counts
-tests/                  # unit + integration tests
-.github/workflows/      # ci.yml, claude-review.yml, claude.yml
+src/DuckNet.AppHost/          # Aspire: telemetry + alarm
+src/DuckNet.Contracts/        # EventEnvelope, Squeaked, AlarmRaised
+src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient
+src/DuckNet.Kernel/           # primitives + Step 3 console
+  Transport/                  # LogTailFeeder (SQLite)
+  Consumer/                   # Inbox + PerKeySequencer + checkpoint
+  Producer/                   # DuckSimulator, TransactionalPublisher, OutboxDispatcher
+  Persistence/                # KernelDb + per-Center schema
+src/DuckNet.TelemetryCenter/  # owns event_log writes; GET/POST /bus/events
+src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox
+tests/                        # kernel + AlarmCenter isolation/catch-up
+infra/docker/                 # one Dockerfile per Center
+.github/workflows/            # ci.yml, claude-review.yml, deploy-center.yml
 ```
 
 ## Build & test
@@ -53,10 +59,10 @@ tests/                  # unit + integration tests
 dotnet build
 dotnet test
 dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
-dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
+dotnet run --project src/DuckNet.AppHost
 ```
 
-Slash commands: `/run-demo`, `/mis-demo` (optional seconds). Format hook: `dotnet format` on `*.cs` after agent edits.
+Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 4). Format hook: `dotnet format` on `*.cs` after agent edits.
 
 ## PR review
 
@@ -94,7 +100,7 @@ DuckNet is a CCA-F study lab. While working, **spot and propose** reusable agent
 
 When you find one, propose the path, frontmatter (`description`, `allowed-tools`, `argument-hint`, `context: fork` if needed), and why. Wait for approval.
 
-Live: skill `ducknet-kernel`, commands `/run-demo` and `/mis-demo`, PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-center` (Step 4), `ducknet-event-contract` (Step 6), `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
+Live: skills `ducknet-kernel` and `ducknet-center`, commands `/run-demo`, `/mis-demo`, `/run-aspire`, PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-event-contract` (Step 6), `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
 
 ## Step progress
 
@@ -103,6 +109,7 @@ Live: skill `ducknet-kernel`, commands `/run-demo` and `/mis-demo`, PostToolUse 
 | 0 | complete | `step-0` → `main` |
 | 1 | complete | `step-1` → `main` |
 | 2 | complete | `step-2` → `main` |
-| 3 | in progress | `step-3` |
+| 3 | complete | `step-3` → `main` |
+| 4 | in progress | `step-4` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

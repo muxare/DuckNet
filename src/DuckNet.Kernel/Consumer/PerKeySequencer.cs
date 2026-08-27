@@ -1,4 +1,5 @@
-using DuckNet.Kernel.Transport;
+using DuckNet.Contracts;
+using DuckNet.EventBus;
 
 namespace DuckNet.Kernel.Consumer;
 

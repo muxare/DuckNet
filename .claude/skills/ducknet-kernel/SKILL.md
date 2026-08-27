@@ -10,7 +10,7 @@ paths:
 
 # ducknet-kernel
 
-Single-process kernel until Step 4. If the user names a step (1–3), follow that section in [PATTERNS.md](PATTERNS.md) first.
+Single-process kernel console plus the durable primitives library used by Centers from Step 4. If the user names a step (1–3), follow that section in [PATTERNS.md](PATTERNS.md) first. For a new Center, use skill `ducknet-center`.
 
 ## Invariants
 
@@ -20,7 +20,7 @@ Single-process kernel until Step 4. If the user names a step (1–3), follow tha
 - `EventId` is the idempotency key. Duplicates keep the same id.
 - `SubscribeAsync(consumerGroup, …)` — group is a logical subscriber. Inbox and offsets are keyed by group.
 - Hostile middleware applies **after** log read, never before append.
-- Do not implement later steps early. Second Center / Aspire land on Step 4.
+- Do not implement later steps early. Dashboard / schema evolution land on Steps 5–6. RabbitMQ is Step 11.
 
 ## Step 0 map
 

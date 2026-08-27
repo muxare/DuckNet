@@ -1,6 +1,7 @@
 using System.Threading.Channels;
+using DuckNet.Contracts;
 
-namespace DuckNet.Kernel.Transport;
+namespace DuckNet.EventBus;
 
 public sealed class InMemoryEventBus : IEventBus
 {

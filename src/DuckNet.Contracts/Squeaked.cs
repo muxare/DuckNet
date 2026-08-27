@@ -1,4 +1,4 @@
-namespace DuckNet.Kernel.Domain.Events;
+namespace DuckNet.Contracts;
 
 public sealed record Squeaked(
     string DuckId,

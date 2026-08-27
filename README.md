@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current kernel: **Step 3 — durability (append-only log + outbox)**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 4 — second Center (Aspire)**.
 
 ## Rules
 
@@ -23,7 +23,28 @@ dotnet build
 dotnet test
 ```
 
-## Demos (Step 3)
+## Demos
+
+### Step 4 — two Centers (Aspire)
+
+TelemetryCenter publishes `Squeaked` into its log. AlarmCenter tails that log over HTTP (`IEventBus`), never opens Telemetry's SQLite, and raises `AlarmRaised` when a duck exceeds `ALARM_RATE_THRESHOLD` squeaks in `ALARM_WINDOW_SECONDS` (event time).
+
+```bash
+dotnet run --project src/DuckNet.AppHost
+```
+
+Aspire dashboard: both `telemetry` and `alarm` healthy. Stop `alarm`, wait for a burst, start it again — `GET /alarms` on AlarmCenter fills in from the log.
+
+| Knob | Default | Meaning |
+|------|---------|---------|
+| `ALARM_RATE_THRESHOLD` | 10 | raise when unique squeaks in the window **>** this |
+| `ALARM_WINDOW_SECONDS` | 60 | event-time sliding window |
+| `EVENT_LOG_URL` | (Aspire injects) | Telemetry base URL for `/bus/events` |
+| `DUCKNET_DB` | per-Center file under AppHost `data/` | SQLite path |
+
+Agent shortcut: `/run-aspire`.
+
+### Step 3 — kernel (single process)
 
 Defenses on — producer writes state+outbox in one transaction; the log is the source of truth; duplicates and shuffle hit the tail feeder. Counts stay exact and survive restart:
 
@@ -31,40 +52,29 @@ Defenses on — producer writes state+outbox in one transaction; the log is the 
 dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
 ```
 
-Kill the process and run again **without** `--reset-db` — lifetime `Counted` continues from `ducknet-kernel.db` (`Log offset` is the consumer’s contiguous prefix).
-
-Naive consumer — inbox and sequencer off, so totals drift and handles go out of order:
+Naive consumer — inbox and sequencer off:
 
 ```bash
 dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 ```
 
-| Flag / env | Default | Meaning |
-|------------|---------|---------|
-| `--seconds N` | 30 | How long the simulator runs |
-| `--db` / `DUCKNET_DB` | `ducknet-kernel.db` | SQLite file for this Center |
-| `--reset-db` | off | Delete the DB before start |
-| `--duplicate-rate` / `DUPLICATE_RATE` | 0.15 | Probability a log-tail publish is redelivered with the **same** `EventId` |
-| `--no-shuffle` / `SHUFFLE_ENABLED=false` | shuffle on | Disable windowed reorder |
-| `--shuffle-window` / `SHUFFLE_WINDOW` | 50 | Shuffle batch size |
-| `--disable-sequencer` / `SEQUENCER_ENABLED=false` | sequencer on | Pass-through; shuffled order reaches the handler |
-| `--disable-inbox` / `INBOX_ENABLED=false` | inbox on | Disable idempotency |
-| `--mis-demo` | defenses on | Disable **inbox and sequencer** (teaching contrast) |
+Agent shortcuts: `/run-demo`, `/mis-demo`.
 
-Agent shortcuts: `/run-demo` `[seconds]`, `/mis-demo` `[seconds]`.
+**What to look for (kernel):** with defenses on, `Published (session) == Counted (lifetime)` on a fresh DB, `Log rows == Counted`, and `Out of order == 0`.
 
-**What to look for:** with defenses on, `Published (session) == Counted (lifetime)` on a fresh DB, `Log rows == Counted`, and `Out of order == 0`. After a restart without `--reset-db`, lifetime `Counted` equals `Log rows`. With `--mis-demo`, `Counted > Log rows` and `Out of order > 0`. Ordering is per duck, never global.
+**What to look for (Aspire):** AlarmCenter `/stats` `database` is `alarm.db`, never `telemetry.db`. After a squeak storm, `/alarms` lists ducks that crossed the threshold.
 
 ## Layout
 
 ```
-src/DuckNet.Kernel/     # single-process kernel until Step 4
-  Transport/            # IEventBus, hostile wrappers, LogTailFeeder
-  Consumer/             # Inbox + PerKeySequencer + checkpoint
-  Producer/             # DuckSimulator, TransactionalPublisher, OutboxDispatcher
-  Persistence/          # SQLite: log, outbox, inbox, offsets, counts
-tests/                  # unit + integration tests
-.github/workflows/      # ci.yml, claude-review.yml, claude.yml
+src/DuckNet.AppHost/          # Aspire orchestration
+src/DuckNet.Contracts/        # event records only
+src/DuckNet.EventBus/         # IEventBus + HTTP log adapter
+src/DuckNet.Kernel/           # durable primitives + Step 3 console
+src/DuckNet.TelemetryCenter/  # owns event_log
+src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised
+tests/
+infra/docker/                 # one image per Center
 ```
 
 ## Roadmap
@@ -81,8 +91,9 @@ tests/                  # unit + integration tests
 | 0 | complete | One producer, one consumer, counts match |
 | 1 | complete | Forced duplicates + inbox → counts still match |
 | 2 | complete | Shuffle + per-key sequencer → order and counts still match |
-| 3 | in progress | Durable log + outbox → kill/restart, no double-count |
-| 4+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 3 | complete | Durable log + outbox → kill/restart, no double-count |
+| 4 | in progress | Two Centers, two DBs; Alarm catches up from the log |
+| 5+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

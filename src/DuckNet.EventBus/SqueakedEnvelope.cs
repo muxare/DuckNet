@@ -1,7 +1,7 @@
 using System.Text.Json;
-using DuckNet.Kernel.Domain.Events;
+using DuckNet.Contracts;
 
-namespace DuckNet.Kernel.Transport;
+namespace DuckNet.EventBus;
 
 public static class SqueakedEnvelope
 {

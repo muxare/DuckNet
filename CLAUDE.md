@@ -66,12 +66,20 @@ Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 4). Forma
 
 ## PR review
 
-Every PR gets a headless Claude review (`claude-review.yml`) against the five
-rules above. It uses `claude -p --output-format json --json-schema` and returns
-`{ verdict, violations[], notes[] }`, posted as one sticky PR comment.
+Every PR gets two headless Claude reviews (`claude-review.yml`), each via
+`claude -p --output-format json --json-schema`, each with its own sticky comment:
 
-**The review is advisory** — `ci.yml` decides merge. Mention `@claude` on any
-PR or issue to ask questions interactively (`claude.yml`).
+| Review | Prompt | Output | Looks for |
+|--------|--------|--------|-----------|
+| Architecture | `architecture-review.md` | `{ verdict, violations[], notes[] }` | The five rules above |
+| Code | `code-review.md` | `{ verdict, findings[], notes[] }` | Bugs, tests, security, reliability, contract breaks |
+
+**Both are advisory** — `ci.yml` decides merge. Drafts and docs-only PRs
+(`docs/**`, `*.md`, `*.html`) are skipped. Architecture uses Haiku with no
+tools; code uses Sonnet with `--max-turns 4` and a $0.15 cap.
+
+Mention `@claude` on any PR or issue to ask questions interactively
+(`claude.yml`).
 
 Requires the repo secret `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`).
 

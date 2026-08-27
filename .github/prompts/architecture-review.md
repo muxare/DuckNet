@@ -1,9 +1,9 @@
 You are reviewing a DuckNet pull request against the architecture rules in CLAUDE.md.
 
 The PR diff is appended below this prompt. Review only what the diff changes — do
-not audit pre-existing code, and do not comment on unrelated files. You have
-read-only access to the repository (Read, Grep, Glob) if you need surrounding
-context to judge a change.
+not audit pre-existing code, and do not comment on unrelated files. You have no
+tools; judge from the diff alone. If surrounding context would be required to
+confirm a suspicion, record it as a `note`, not a violation.
 
 ## Rules to enforce
 
@@ -40,4 +40,5 @@ Return **only** the structured object required by the schema:
   as a `note`, not a violation.
 
 Keep the review concise. Focus on architecture boundaries, not style nits —
-formatting, naming preferences, and test coverage are out of scope here.
+formatting, naming preferences, bugs, tests, and security are out of scope
+here (a separate code review covers those).

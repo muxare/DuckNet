@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "request_changes"]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": ["bug", "test", "security", "reliability", "contract"],
+            "description": "Kind of code-review finding."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor"]
+          },
+          "file": {
+            "type": "string",
+            "description": "Repository-relative path where the finding occurs."
+          },
+          "detail": {
+            "type": "string",
+            "description": "What is wrong and why, in one or two sentences."
+          }
+        },
+        "required": ["category", "severity", "detail"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Brief constructive feedback for the author. Empty array if none."
+    }
+  },
+  "required": ["verdict", "findings", "notes"],
+  "additionalProperties": false
+}

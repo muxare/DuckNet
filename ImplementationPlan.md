@@ -681,7 +681,7 @@ Consumer: Handler → ConsumerOffsetStore
 ```
 .github/workflows/
 ├── ci.yml                 # every push + PR
-├── claude-review.yml      # PRs only — headless architecture review
+├── claude-review.yml      # PRs only — headless architecture + code review
 └── deploy-center.yml      # manual dispatch + path-filtered auto deploy
 ```
 
@@ -804,13 +804,13 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 | Workflow | CCA-F concept demonstrated |
 |----------|------------------------------|
 | `ci.yml` | Reliable automation; deterministic builds |
-| `claude-review.yml` | Headless Claude Code in CI; `-p` flag; structured PR feedback |
+| `claude-review.yml` | Headless Claude Code in CI; `-p` flag; isolated architecture + code reviews (matrix jobs, each with its own JSON schema) |
 | `deploy-center.yml` | Scoped automation; human approval gate on prod |
 | PostToolUse hook | Auto `dotnet format` after agent edits locally |
 
 ### Interview / exam soundbite
 
-*"DuckNet isn't just an event-driven demo — it's my CCA-F study lab: MCP tools for ops, headless Claude reviewing every PR against architecture rules, and Centers orchestrated by events instead of a central conductor."*
+*"DuckNet isn't just an event-driven demo — it's my CCA-F study lab: MCP tools for ops, headless Claude reviewing every PR (architecture rules and code defects, isolated jobs), and Centers orchestrated by events instead of a central conductor."*
 
 ---
 
@@ -876,11 +876,11 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 | Block merge on `request_changes` | Step 4 | ~30 min — branch protection rule |
 | Center-specific review skills | Step 4 | ~1 hr per skill |
 | MCP-connected review (query test results) | Step 9 | ~2–3 hr |
-| Full multi-agent review (security + arch + tests) | Optional stretch | ~1 evening — overkill until Step 6 |
+| Third isolated review (security-only) | Optional stretch | architecture + code already run as isolated matrix jobs |
 
 ### Cost & reliability expectations
 
-- **Cost:** ~$0.05–0.30 per PR review (depends on diff size and model). Negligible for a personal lab repo.
+- **Cost:** Drafts and docs-only PRs are skipped. Architecture is Haiku with no tools; code is Sonnet capped at `$0.15` / 4 turns. Typical spend is cents per non-draft code PR.
 - **Flakiness:** Pin prompt + `--allowedTools` read-only; review advises, **`ci.yml` tests decide merge**. Never let Claude be the only gate until prompts are stable.
 - **Exam alignment:** Headless CI review + `CLAUDE.md` + Skills = direct D3/D4/D5 study material.
 

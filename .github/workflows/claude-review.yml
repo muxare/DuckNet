@@ -1,24 +1,62 @@
-name: Claude Architecture Review
+name: Claude PR Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+    # Docs-only PRs are not worth two model calls. A mixed PR (code + docs)
+    # still runs because GitHub skips only when *every* path matches.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '**/*.html'
 
 permissions:
   contents: read
   pull-requests: write
 
 # A rapid series of pushes should not stack up reviews on the same PR.
+# Workflow-level: a new run cancels the previous run (both matrix jobs).
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
+    name: ${{ matrix.id }}
     # Secrets are withheld from fork PRs, so the review cannot authenticate
-    # there. Skip cleanly rather than fail confusingly.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # there. Skip cleanly rather than fail confusingly. Drafts are skipped
+    # until ready_for_review; that event is in `on.pull_request.types`.
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: architecture
+            prompt: architecture-review.md
+            schema: review-verdict.schema.json
+            heading: architecture review
+            list_key: violations
+            list_heading: Violations
+            kind_key: rule
+            kind_header: Rule
+            empty_message: "No architecture rule violations found in this diff."
+            model: haiku
+            tools: none
+            max_budget_usd: "0.15"
+          - id: code
+            prompt: code-review.md
+            schema: code-review.schema.json
+            heading: code review
+            list_key: findings
+            list_heading: Findings
+            kind_key: category
+            kind_header: Category
+            empty_message: "No code-review findings in this diff."
+            model: sonnet
+            tools: "Read,Grep,Glob"
+            max_turns: "4"
+            max_budget_usd: "0.15"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,6 +72,7 @@ jobs:
       - name: Build review input
         env:
           BASE_REF: ${{ github.base_ref }}
+          PROMPT_FILE: .github/prompts/${{ matrix.prompt }}
         run: |
           set -euo pipefail
 
@@ -48,7 +87,7 @@ jobs:
           # diff content must not be interpreted by the shell, and large diffs
           # would otherwise exceed the argument limit.
           {
-            cat .github/prompts/architecture-review.md
+            cat "$PROMPT_FILE"
             printf '\n\n## PR diff\n\n```diff\n'
             head -c "$MAX_BYTES" full.diff
             printf '\n```\n'
@@ -58,10 +97,15 @@ jobs:
             fi
           } > review-input.md
 
-      - name: Run architecture review
+      - name: Run ${{ matrix.heading }}
         id: review
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          SCHEMA_FILE: .github/schemas/${{ matrix.schema }}
+          MODEL: ${{ matrix.model }}
+          TOOLS: ${{ matrix.tools }}
+          MAX_TURNS: ${{ matrix.max_turns }}
+          MAX_BUDGET_USD: ${{ matrix.max_budget_usd }}
         run: |
           set -uo pipefail
 
@@ -71,18 +115,30 @@ jobs:
             exit 0
           fi
 
+          args=(
+            -p
+            --output-format json
+            --json-schema "$(cat "$SCHEMA_FILE")"
+            --permission-mode dontAsk
+            --model "$MODEL"
+            --max-budget-usd "$MAX_BUDGET_USD"
+          )
+          # `none` disables built-ins (`--tools ""`). Structured JSON output
+          # still works; the existing architecture job already used a restricted
+          # `--tools` list with `--json-schema`.
+          if [ "$TOOLS" = "none" ]; then
+            args+=(--tools "")
+          else
+            args+=(--tools "$TOOLS" --allowedTools "$TOOLS")
+          fi
+          if [ -n "${MAX_TURNS:-}" ]; then
+            args+=(--max-turns "$MAX_TURNS")
+          fi
+
           # GitHub runs `run:` under `bash -e`, which would abort this step
           # before the exit code can be captured. Disable it around the call.
           set +e
-          claude -p < review-input.md \
-            --output-format json \
-            --json-schema "$(cat .github/schemas/review-verdict.schema.json)" \
-            --permission-mode dontAsk \
-            --tools "Read,Grep,Glob" \
-            --allowedTools "Read,Grep,Glob" \
-            --model sonnet \
-            --max-budget-usd 0.50 \
-            > review.json
+          claude "${args[@]}" < review-input.md > review.json
           CLAUDE_EXIT=$?
           set -e
           echo "claude_exit=${CLAUDE_EXIT}" >> "$GITHUB_OUTPUT"
@@ -99,10 +155,24 @@ jobs:
       - name: Post or update review comment
         if: always()
         uses: actions/github-script@v7
+        env:
+          REVIEW_ID: ${{ matrix.id }}
+          HEADING: ${{ matrix.heading }}
+          LIST_KEY: ${{ matrix.list_key }}
+          LIST_HEADING: ${{ matrix.list_heading }}
+          KIND_KEY: ${{ matrix.kind_key }}
+          KIND_HEADER: ${{ matrix.kind_header }}
+          EMPTY_MESSAGE: ${{ matrix.empty_message }}
         with:
           script: |
             const fs = require('fs');
-            const MARKER = '<!-- ducknet:claude-architecture-review -->';
+            const heading = process.env.HEADING;
+            const listKey = process.env.LIST_KEY;
+            const listHeading = process.env.LIST_HEADING;
+            const kindKey = process.env.KIND_KEY;
+            const kindHeader = process.env.KIND_HEADER;
+            const emptyMessage = process.env.EMPTY_MESSAGE;
+            const MARKER = `<!-- ducknet:claude-${process.env.REVIEW_ID}-review -->`;
             const cell = s => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 
             let env = null;
@@ -113,16 +183,17 @@ jobs:
 
             if (so && typeof so.verdict === 'string') {
               const approved = so.verdict === 'approve';
-              const out = [`## ${approved ? '✅' : '⚠️'} Claude architecture review — **${approved ? 'approve' : 'request changes'}**`, ''];
+              const out = [`## ${approved ? '✅' : '⚠️'} Claude ${heading} — **${approved ? 'approve' : 'request changes'}**`, ''];
 
-              const violations = Array.isArray(so.violations) ? so.violations : [];
-              if (violations.length === 0) {
-                out.push('No architecture rule violations found in this diff.');
+              const items = Array.isArray(so[listKey]) ? so[listKey] : [];
+              if (items.length === 0) {
+                out.push(emptyMessage);
               } else {
-                out.push(`### Violations (${violations.length})`, '');
-                out.push('| Rule | Severity | File | Detail |', '|---|---|---|---|');
-                for (const v of violations) {
-                  out.push(`| ${cell(v.rule)} | ${cell(v.severity)} | ${v.file ? '`' + cell(v.file) + '`' : '—'} | ${cell(v.detail)} |`);
+                out.push(`### ${listHeading} (${items.length})`, '');
+                out.push(`| ${kindHeader} | Severity | File | Detail |`, '|---|---|---|---|');
+                for (const item of items) {
+                  const kind = cell(item[kindKey]);
+                  out.push(`| ${kind} | ${cell(item.severity)} | ${item.file ? '`' + cell(item.file) + '`' : '—'} | ${cell(item.detail)} |`);
                 }
               }
 
@@ -139,7 +210,7 @@ jobs:
             } else {
               const raw = env && typeof env.result === 'string' ? env.result : '(no output captured)';
               body = [
-                '## ⚠️ Claude architecture review — degraded',
+                `## ⚠️ Claude ${heading} — degraded`,
                 '',
                 'The review did not return a schema-conforming result, so no verdict is available.',
                 'See the workflow run log for details.',

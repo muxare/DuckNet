@@ -1,5 +1,38 @@
 # Development diary
 
+## 2026-08-27 — Cheaper Claude PR reviews
+
+### What changed
+`claude-review.yml` skips drafts and docs-only diffs. Architecture is Haiku with `--tools ""` (diff only). Code stays Sonnet, `--max-turns 4`, `$0.15` cap. Both jobs cap at `$0.15`.
+
+### How to test
+- Draft PR: checks skipped until **Ready for review**.
+- Docs-only PR (`docs/**`, `*.md`, `*.html`): workflow does not run.
+- Code PR: two checks still post; architecture should be a cheap Haiku one-shot.
+
+## 2026-08-27 — Headless PR code review (`claude -p`)
+
+### What changed
+`claude-review.yml` now runs two isolated `claude -p --json-schema` jobs on every PR: architecture (the five CLAUDE.md rules) and code (bugs, tests, security, reliability, contract breaks). Each posts its own sticky comment. Still advisory — `ci.yml` gates merge. Does **not** run on push (no PR to comment on).
+
+### Architecture impact
+```mermaid
+flowchart LR
+  PR[pull_request] --> W[claude-review.yml]
+  W --> A["claude -p architecture"]
+  W --> C["claude -p code"]
+  A --> Ac["sticky comment: architecture"]
+  C --> Cc["sticky comment: code"]
+  CI[ci.yml] --> Merge[merge gate]
+```
+
+### How to test
+- Open or push to a PR from this repo (not a fork).
+- Expect two checks: `Claude PR Review / architecture` and `Claude PR Review / code`.
+- Expect two sticky comments; later pushes update them in place.
+- Fork PRs skip both jobs (no `CLAUDE_CODE_OAUTH_TOKEN`).
+
+
 ## 2026-08-27 — Step 1: at-least-once + inbox
 
 ### What changed

@@ -1,0 +1,61 @@
+# TEMPORARY: proves CLAUDE_CODE_OAUTH_TOKEN works on a runner before the
+# real review workflow is built on top of it. Delete once green.
+name: Claude Auth Smoke Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/reviewer-setup-1iad7t]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g @anthropic-ai/claude-code@2.1.246
+
+      - name: Verify auth and structured output
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set on this repository."
+            echo "Add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          echo "Secret is present (${#CLAUDE_CODE_OAUTH_TOKEN} chars)."
+
+          echo 'Reply with verdict approve, no violations, no notes.' | claude -p \
+            --output-format json \
+            --json-schema "$(cat .github/schemas/review-verdict.schema.json)" \
+            --permission-mode dontAsk \
+            --tools "" \
+            --model sonnet \
+            --max-budget-usd 0.05 \
+            > out.json
+
+          echo "--- envelope ---"
+          jq '{is_error, subtype, total_cost_usd, num_turns}' out.json
+
+          jq -e '.is_error == false' out.json > /dev/null \
+            || { echo "::error::Claude reported is_error=true"; jq -r '.result' out.json; exit 1; }
+
+          jq -e '.structured_output.verdict == "approve"' out.json > /dev/null \
+            || { echo "::error::structured_output missing or did not conform"; cat out.json; exit 1; }
+
+          echo "--- structured_output ---"
+          jq '.structured_output' out.json
+          echo "Smoke test passed: auth OK, pinned CLI OK, --json-schema OK."

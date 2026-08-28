@@ -83,7 +83,7 @@ model.
 (missing `CLAUDE_CODE_OAUTH_TOKEN`), never on a `request_changes` verdict.
 Drafts and docs-only PRs (`docs/**`, `*.md`, `*.html`) are skipped. Low-risk
 PRs skip specialists after triage. `code-review.md` is kept on disk but not
-invoked until this loop is boring.
+invoked until this loop is boring. Later and parked work: [docs/ci-policy.md](docs/ci-policy.md).
 
 Mention `@claude` on any PR or issue to ask questions interactively
 (`claude.yml`).

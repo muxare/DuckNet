@@ -67,17 +67,23 @@ Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 5). Forma
 
 ## PR review
 
-Every PR gets two headless Claude reviews (`claude-review.yml`), each via
-`claude -p --output-format json --json-schema`, each with its own sticky comment:
+`claude-review.yml` is a ReviewFlow-style loop: **triage → specialists → one
+aggregated comment**. Specialists are isolated (no shared conversation); they
+read `review-state.json` plus a file-subset diff. Aggregation is `jq`, not a
+model.
 
-| Review | Prompt | Output | Looks for |
-|--------|--------|--------|-----------|
-| Architecture | `architecture-review.md` | `{ verdict, violations[], notes[] }` | The five rules above |
-| Code | `code-review.md` | `{ verdict, findings[], notes[] }` | Bugs, tests, security, reliability, contract breaks |
+| Stage | Prompt / job | Output | Looks for |
+|--------|--------------|--------|-----------|
+| Triage | `triage.md` (Haiku, no tools, ~$0.10) | `review-state.json` | Risk + which specialists to run |
+| Architecture | `architecture-review.md` (Haiku, if requested) | findings | The five rules above |
+| Security | `security-review.md` (Haiku, if requested) | findings | Secrets, payload parse, auth |
+| Aggregate | `.github/scripts/aggregate-review.sh` | one sticky comment | Merge only — no Claude |
 
-**Both are advisory** — `ci.yml` decides merge. Drafts and docs-only PRs
-(`docs/**`, `*.md`, `*.html`) are skipped. Architecture uses Haiku with no
-tools; code uses Sonnet with `--max-turns 4` and a $0.15 cap.
+**Advisory** — `ci.yml` decides merge. Review jobs fail only on infrastructure
+(missing `CLAUDE_CODE_OAUTH_TOKEN`), never on a `request_changes` verdict.
+Drafts and docs-only PRs (`docs/**`, `*.md`, `*.html`) are skipped. Low-risk
+PRs skip specialists after triage. `code-review.md` is kept on disk but not
+invoked until this loop is boring.
 
 Mention `@claude` on any PR or issue to ask questions interactively
 (`claude.yml`).

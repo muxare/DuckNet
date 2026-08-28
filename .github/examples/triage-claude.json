@@ -1,0 +1,27 @@
+{
+  "risk": {
+    "level": "high",
+    "reasons": [
+      "Changes event contract and AlarmCenter consumer"
+    ]
+  },
+  "files": [
+    {
+      "path": "src/DuckNet.AlarmCenter/AlarmConsumer.cs",
+      "risk": "high",
+      "areas": ["architecture"]
+    },
+    {
+      "path": "src/DuckNet.Contracts/Squeaked.cs",
+      "risk": "high",
+      "areas": ["architecture", "security"]
+    },
+    {
+      "path": "README.md",
+      "risk": "low",
+      "areas": ["other"]
+    }
+  ],
+  "requestedReviewers": ["architecture", "security"],
+  "skipped": false
+}

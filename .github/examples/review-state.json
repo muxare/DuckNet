@@ -1,0 +1,43 @@
+{
+  "pullRequest": {
+    "number": 7,
+    "title": "feat(step-6): evolve Squeaked to v2",
+    "sha": "abc1234deadbeef"
+  },
+  "files": [
+    {
+      "path": "src/DuckNet.AlarmCenter/AlarmConsumer.cs",
+      "risk": "high",
+      "areas": [
+        "architecture"
+      ]
+    },
+    {
+      "path": "src/DuckNet.Contracts/Squeaked.cs",
+      "risk": "high",
+      "areas": [
+        "architecture",
+        "security"
+      ]
+    },
+    {
+      "path": "README.md",
+      "risk": "low",
+      "areas": [
+        "other"
+      ]
+    }
+  ],
+  "findings": [],
+  "risk": {
+    "level": "high",
+    "reasons": [
+      "Changes event contract and AlarmCenter consumer"
+    ]
+  },
+  "requestedReviewers": [
+    "architecture",
+    "security"
+  ],
+  "skipped": false
+}

@@ -2,7 +2,37 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-28 — ReviewFlow MVP (PR review)
+
+### What changed
+`claude-review.yml` is a staged loop: Haiku triage writes `review-state.json` (artifact) → architecture and security run only if requested, each on a file-subset diff → `jq` aggregates one sticky PR comment. Specialists are stateless; they do not talk to each other. `code-review.md` stays on disk but is not invoked. Orchestrator scripts are fixture-tested in `ci.yml` without Claude.
+
+### Architecture impact
+```mermaid
+flowchart TD
+  PR[pull_request] --> T[triage Haiku]
+  T --> S[review-state.json]
+  S -->|architecture| A[architecture Haiku]
+  S -->|security| Sec[security Haiku]
+  S -->|low risk| Skip[skip specialists]
+  A --> Agg[aggregate-review.sh]
+  Sec --> Agg
+  Skip --> Agg
+  Agg --> C[one sticky comment]
+  CI[ci.yml] --> Merge[merge gate]
+```
+
+### How to test
+- `bash .github/scripts/test-aggregate-review.sh` — merge, skip, both specialists, degraded (no Claude)
+- Open a non-draft code PR from this repo: expect jobs `triage` → optional `architecture`/`security` → `aggregate`, one comment with marker `ducknet-reviewflow`
+- Low-risk / docs-only: specialists skipped or workflow not started
+- Missing `CLAUDE_CODE_OAUTH_TOKEN`: triage fails (infra); verdict never fails the workflow
+
+### Follow-ups
+**CCA-F:** coordinator + isolated specialists + structured state (D1/D4). Nightly reuse of `review-state`, code specialist, Docker-off-PR — later.
+
 ## 2026-08-28 — DashboardCenter Vue UI
+
 
 ### What changed
 DashboardCenter `/` is a Vue 3 + Bootstrap 5 SPA. TanStack Query polls `/dashboard/summary` and `/stats`; TanStack Table sorts/filters hour buckets. Rebuild is a modal → `POST /dashboard/rebuild`. JSON APIs unchanged. UI lives in the same Center (no extra process, no Center-to-Center calls). `dotnet build` runs `npm ci && npm run build` into `wwwroot`.

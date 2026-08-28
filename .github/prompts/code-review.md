@@ -1,3 +1,7 @@
+Not invoked by `claude-review.yml` (ReviewFlow MVP). Kept for a later
+specialist. Do not wire this prompt back in until triage + architecture +
+security is reliable.
+
 You are reviewing a DuckNet pull request for code correctness — not architecture.
 
 The PR diff is appended below this prompt. Review only what the diff changes —

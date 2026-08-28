@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "properties": {
+    "risk": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["level", "reasons"],
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "risk": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "areas": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["architecture", "security", "other"]
+            }
+          }
+        },
+        "required": ["path", "risk", "areas"],
+        "additionalProperties": false
+      }
+    },
+    "requestedReviewers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["architecture", "security"]
+      }
+    },
+    "skipped": { "type": "boolean" }
+  },
+  "required": ["risk", "files", "requestedReviewers", "skipped"],
+  "additionalProperties": false
+}

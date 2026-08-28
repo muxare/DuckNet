@@ -85,7 +85,7 @@ DuckNet/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml                    # build + test (Step 0)
-│       ├── claude-review.yml         # headless PR review (Step 0)
+│       ├── claude-review.yml         # ReviewFlow triage + specialists (Step 0)
 │       └── deploy-center.yml         # per-Center deploy (Step 4+)
 ├── infra/
 │   ├── bicep/                        # Step 12 — Azure resources
@@ -683,7 +683,7 @@ Consumer: Handler → ConsumerOffsetStore
 ```
 .github/workflows/
 ├── ci.yml                 # every push + PR
-├── claude-review.yml      # PRs only — headless architecture + code review
+├── claude-review.yml      # PRs only — triage + architecture/security + aggregate
 └── deploy-center.yml      # manual dispatch + path-filtered auto deploy
 ```
 
@@ -806,13 +806,13 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 | Workflow | CCA-F concept demonstrated |
 |----------|------------------------------|
 | `ci.yml` | Reliable automation; deterministic builds |
-| `claude-review.yml` | Headless Claude Code in CI; `-p` flag; isolated architecture + code reviews (matrix jobs, each with its own JSON schema) |
+| `claude-review.yml` | Headless Claude Code in CI; `-p` flag; triage writes `review-state.json`, then isolated architecture + security specialists; `jq` aggregates one advisory comment |
 | `deploy-center.yml` | Scoped automation; human approval gate on prod |
 | PostToolUse hook | Auto `dotnet format` after agent edits locally |
 
 ### Interview / exam soundbite
 
-*"DuckNet isn't just an event-driven demo — it's my CCA-F study lab: MCP tools for ops, headless Claude reviewing every PR (architecture rules and code defects, isolated jobs), and Centers orchestrated by events instead of a central conductor."*
+*"DuckNet isn't just an event-driven demo — it's my CCA-F study lab: MCP tools for ops, headless Claude triaging every PR then running isolated architecture and security specialists through shared review-state JSON, and Centers orchestrated by events instead of a central conductor."*
 
 ---
 
@@ -878,12 +878,12 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 | Block merge on `request_changes` | Step 4 | ~30 min — branch protection rule |
 | Center-specific review skills | Step 4 | ~1 hr per skill |
 | MCP-connected review (query test results) | Step 9 | ~2–3 hr |
-| Third isolated review (security-only) | Optional stretch | architecture + code already run as isolated matrix jobs |
+| Re-introduce code/bug specialist behind triage | After ReviewFlow MVP is boring | architecture + security already run as isolated jobs |
 
 ### Cost & reliability expectations
 
-- **Cost:** Drafts and docs-only PRs are skipped. Architecture is Haiku with no tools; code is Sonnet capped at `$0.15` / 4 turns. Typical spend is cents per non-draft code PR.
-- **Flakiness:** Pin prompt + `--allowedTools` read-only; review advises, **`ci.yml` tests decide merge**. Never let Claude be the only gate until prompts are stable.
+- **Cost:** Drafts and docs-only PRs are skipped. Triage is Haiku (~`$0.10`); architecture and security run only if requested (Haiku, ~`$0.15` each). Typical spend is cents per non-draft code PR.
+- **Flakiness:** Pin prompt + `--tools ""`; review advises, **`ci.yml` tests decide merge**. Jobs fail only on missing auth, never on a review verdict. Never let Claude be the only gate until prompts are stable.
 - **Exam alignment:** Headless CI review + `CLAUDE.md` + Skills = direct D3/D4/D5 study material.
 
 ### Recommended timeline
@@ -1021,7 +1021,7 @@ Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5
 - [ ] README with demo commands for each step.
 - [ ] `DuckNetArchitectureSteps.html` reflects final architecture (update if implementation diverges).
 - [ ] Single-command demo: squeak → alarm → dashboard → billing trace visible in Aspire / App Insights.
-- [ ] `ci.yml` green on main; `claude-review.yml` posting on PRs.
+- [ ] `ci.yml` green on main; `claude-review.yml` posting one aggregated ReviewFlow comment on PRs.
 - [ ] `deploy-center.yml` can deploy any single Center or all to dev/prod.
 - [ ] MCP ops tools documented for log replay, DLQ inspect, dashboard rebuild (CCA-F D2).
 

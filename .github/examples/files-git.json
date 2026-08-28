@@ -1,0 +1,17 @@
+[
+  {
+    "path": "src/DuckNet.AlarmCenter/AlarmConsumer.cs",
+    "added": 12,
+    "deleted": 4
+  },
+  {
+    "path": "src/DuckNet.Contracts/Squeaked.cs",
+    "added": 20,
+    "deleted": 2
+  },
+  {
+    "path": "README.md",
+    "added": 3,
+    "deleted": 1
+  }
+]

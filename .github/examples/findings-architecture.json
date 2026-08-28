@@ -1,0 +1,13 @@
+{
+  "reviewer": "architecture",
+  "findings": [
+    {
+      "severity": "major",
+      "file": "src/DuckNet.AlarmCenter/AlarmConsumer.cs",
+      "detail": "Handler assumes global order across ducks.",
+      "rule": 4,
+      "confidence": 0.8
+    }
+  ],
+  "notes": ["Consider a mixed-version replay test for this consumer."]
+}

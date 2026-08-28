@@ -1,9 +1,12 @@
 name: Claude PR Review
 
+# Advisory only. `ci.yml` is the merge gate. Jobs fail on missing auth / broken
+# orchestration, never on a review verdict.
+
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    # Docs-only PRs are not worth two model calls. A mixed PR (code + docs)
+    # Docs-only PRs are not worth model calls. A mixed PR (code + docs)
     # still runs because GitHub skips only when *every* path matches.
     paths-ignore:
       - 'docs/**'
@@ -15,48 +18,26 @@ permissions:
   pull-requests: write
 
 # A rapid series of pushes should not stack up reviews on the same PR.
-# Workflow-level: a new run cancels the previous run (both matrix jobs).
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  CLAUDE_CLI_VERSION: '2.1.246'
+  TRIAGE_BUDGET_USD: '0.10'
+  SPECIALIST_BUDGET_USD: '0.15'
+  SMALL_DIFF_BYTES: '50000'
+  SPECIALIST_DIFF_BYTES: '200000'
+
 jobs:
-  review:
-    name: ${{ matrix.id }}
-    # Secrets are withheld from fork PRs, so the review cannot authenticate
-    # there. Skip cleanly rather than fail confusingly. Drafts are skipped
-    # until ready_for_review; that event is in `on.pull_request.types`.
+  triage:
+    name: triage
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: architecture
-            prompt: architecture-review.md
-            schema: review-verdict.schema.json
-            heading: architecture review
-            list_key: violations
-            list_heading: Violations
-            kind_key: rule
-            kind_header: Rule
-            empty_message: "No architecture rule violations found in this diff."
-            model: haiku
-            tools: none
-            max_budget_usd: "0.15"
-          - id: code
-            prompt: code-review.md
-            schema: code-review.schema.json
-            heading: code review
-            list_key: findings
-            list_heading: Findings
-            kind_key: category
-            kind_header: Category
-            empty_message: "No code-review findings in this diff."
-            model: sonnet
-            tools: "Read"
-            max_turns: "5"
-            max_budget_usd: "0.50"
+    outputs:
+      wants_architecture: ${{ steps.state.outputs.wants_architecture }}
+      wants_security: ${{ steps.state.outputs.wants_security }}
+      skipped: ${{ steps.state.outputs.skipped }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,118 +48,277 @@ jobs:
           node-version: '22'
 
       - name: Install Claude Code CLI (pinned)
-        run: npm install -g @anthropic-ai/claude-code@2.1.246
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}"
 
-      - name: Build review input
+      - name: Build triage input
+        id: files
         env:
           BASE_REF: ${{ github.base_ref }}
-          PROMPT_FILE: .github/prompts/${{ matrix.prompt }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-
           git fetch --no-tags origin "$BASE_REF"
 
-          MAX_BYTES=200000
+          jq -n \
+            --argjson number "$PR_NUMBER" \
+            --arg title "$PR_TITLE" \
+            --arg sha "$PR_SHA" \
+            '{number: $number, title: $title, sha: $sha}' > pr.json
+
+          git diff --numstat "origin/${BASE_REF}...HEAD" \
+            | bash .github/scripts/numstat-to-json.sh > files-git.json
+
           git diff "origin/${BASE_REF}...HEAD" > full.diff
           DIFF_BYTES=$(wc -c < full.diff)
           echo "diff size: ${DIFF_BYTES} bytes"
 
-          # The diff is written to a file and fed on stdin, never through argv:
-          # diff content must not be interpreted by the shell, and large diffs
-          # would otherwise exceed the argument limit.
           {
-            cat "$PROMPT_FILE"
-            printf '\n\n## PR diff\n\n```diff\n'
-            head -c "$MAX_BYTES" full.diff
+            cat .github/prompts/triage.md
+            printf '\n\n## Pull request\n\n- number: %s\n- title: %s\n- sha: %s\n' \
+              "$PR_NUMBER" "$PR_TITLE" "$PR_SHA"
+            printf '\n## Changed files (numstat)\n\n```\n'
+            git diff --numstat "origin/${BASE_REF}...HEAD"
             printf '\n```\n'
-            if [ "$DIFF_BYTES" -gt "$MAX_BYTES" ]; then
-              printf '\n**NOTE: this diff was TRUNCATED at %s of %s bytes.**\n' \
-                "$MAX_BYTES" "$DIFF_BYTES"
+            if [ "$DIFF_BYTES" -le "$SMALL_DIFF_BYTES" ]; then
+              printf '\n## Full diff (small PR)\n\n```diff\n'
+              cat full.diff
+              printf '\n```\n'
+            else
+              printf '\n## Note\n\nFull diff omitted (%s bytes). Classify from paths and numstat only.\n' \
+                "$DIFF_BYTES"
             fi
           } > review-input.md
 
-      - name: Run ${{ matrix.heading }}
-        id: review
+      - name: Run triage
+        id: claude
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          SCHEMA_FILE: .github/schemas/${{ matrix.schema }}
-          MODEL: ${{ matrix.model }}
-          TOOLS: ${{ matrix.tools }}
-          MAX_TURNS: ${{ matrix.max_turns }}
-          MAX_BUDGET_USD: ${{ matrix.max_budget_usd }}
         run: |
-          set -uo pipefail
-
-          if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set on this repository."
-            echo "claude_exit=1" >> "$GITHUB_OUTPUT"
-            exit 0
+          set +e
+          bash .github/scripts/run-claude.sh \
+            --schema .github/schemas/triage.schema.json \
+            --model haiku \
+            --budget "$TRIAGE_BUDGET_USD" \
+            --tools none \
+            --input review-input.md \
+            --output review.json \
+            --meta "$GITHUB_OUTPUT"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then
+            echo "::error::Triage cannot run without CLAUDE_CODE_OAUTH_TOKEN."
+            exit 1
           fi
+
+      - name: Merge review state
+        id: state
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          extra=()
+          if jq -e '.structured_output.risk' review.json >/dev/null 2>&1; then
+            jq '.structured_output' review.json > triage-claude.json
+            extra=(triage-claude.json)
+          else
+            echo "::warning::Triage returned no structured output; using path-based fallback."
+          fi
+
+          bash .github/scripts/merge-triage-state.sh pr.json files-git.json "${extra[@]}" \
+            > review-state.json
+
+          echo "wants_architecture=$(jq -r 'any(.requestedReviewers[]; . == "architecture")' review-state.json)" >> "$GITHUB_OUTPUT"
+          echo "wants_security=$(jq -r 'any(.requestedReviewers[]; . == "security")' review-state.json)" >> "$GITHUB_OUTPUT"
+          echo "skipped=$(jq -r '.skipped' review-state.json)" >> "$GITHUB_OUTPUT"
+          jq '{risk, requestedReviewers, skipped, files: [.files[].path]}' review-state.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: review-state
+          path: review-state.json
+          if-no-files-found: error
+
+  architecture:
+    name: architecture
+    needs: triage
+    if: needs.triage.result == 'success' && needs.triage.outputs.wants_architecture == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: review-state
+
+      - name: Build specialist input
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_REF"
+          {
+            cat .github/prompts/architecture-review.md
+            printf '\n\n## Review state\n\n```json\n'
+            cat review-state.json
+            printf '\n```\n\n## Diff of architecture-tagged files\n\n```diff\n'
+            bash .github/scripts/filter-diff.sh \
+              review-state.json architecture "origin/${BASE_REF}...HEAD" "$SPECIALIST_DIFF_BYTES"
+            printf '\n```\n'
+          } > review-input.md
+
+      - name: Run architecture review
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set +e
+          bash .github/scripts/run-claude.sh \
+            --schema .github/schemas/reviewer-findings.schema.json \
+            --model haiku \
+            --budget "$SPECIALIST_BUDGET_USD" \
+            --tools none \
+            --input review-input.md \
+            --output review.json \
+            --meta "$GITHUB_OUTPUT"
+          rc=$?
+          set -e
+          # Auth already gated triage. Model/budget failures become a degraded artifact.
+          if [ "$rc" -eq 2 ]; then
+            echo '{"reviewer":"architecture","findings":[],"notes":[],"error":"missing_token"}' \
+              > findings-architecture.json
+          else
+            bash .github/scripts/extract-findings.sh architecture review.json findings-architecture.json
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: findings-architecture
+          path: findings-architecture.json
+          if-no-files-found: error
+
+  security:
+    name: security
+    needs: triage
+    if: needs.triage.result == 'success' && needs.triage.outputs.wants_security == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: review-state
+
+      - name: Build specialist input
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_REF"
+          {
+            cat .github/prompts/security-review.md
+            printf '\n\n## Review state\n\n```json\n'
+            cat review-state.json
+            printf '\n```\n\n## Diff of security-tagged files\n\n```diff\n'
+            bash .github/scripts/filter-diff.sh \
+              review-state.json security "origin/${BASE_REF}...HEAD" "$SPECIALIST_DIFF_BYTES"
+            printf '\n```\n'
+          } > review-input.md
+
+      - name: Run security review
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set +e
+          bash .github/scripts/run-claude.sh \
+            --schema .github/schemas/reviewer-findings.schema.json \
+            --model haiku \
+            --budget "$SPECIALIST_BUDGET_USD" \
+            --tools none \
+            --input review-input.md \
+            --output review.json \
+            --meta "$GITHUB_OUTPUT"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then
+            echo '{"reviewer":"security","findings":[],"notes":[],"error":"missing_token"}' \
+              > findings-security.json
+          else
+            bash .github/scripts/extract-findings.sh security review.json findings-security.json
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: findings-security
+          path: findings-security.json
+          if-no-files-found: error
+
+  aggregate:
+    name: aggregate
+    needs: [triage, architecture, security]
+    if: always() && !cancelled() && needs.triage.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Aggregate
+        env:
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          state=$(find artifacts -name review-state.json | head -n 1)
+          [ -n "$state" ] || { echo "::error::review-state.json artifact missing"; exit 1; }
 
           args=(
-            -p
-            --output-format json
-            --json-schema "$(cat "$SCHEMA_FILE")"
-            --permission-mode dontAsk
-            --model "$MODEL"
-            --max-budget-usd "$MAX_BUDGET_USD"
+            --state "$state"
+            --out-state aggregated-state.json
+            --out-comment comment.md
+            --sha "$PR_SHA"
           )
-          # `none` disables built-ins (`--tools ""`). Structured JSON output
-          # still works; the existing architecture job already used a restricted
-          # `--tools` list with `--json-schema`.
-          if [ "$TOOLS" = "none" ]; then
-            args+=(--tools "")
-          else
-            args+=(--tools "$TOOLS" --allowedTools "$TOOLS")
-          fi
-          if [ -n "${MAX_TURNS:-}" ]; then
-            args+=(--max-turns "$MAX_TURNS")
-          fi
+          arch=$(find artifacts -name findings-architecture.json | head -n 1 || true)
+          sec=$(find artifacts -name findings-security.json | head -n 1 || true)
+          [ -n "${arch:-}" ] && args+=(--findings "$arch")
+          [ -n "${sec:-}" ] && args+=(--findings "$sec")
 
-          # GitHub runs `run:` under `bash -e`, which would abort this step
-          # before the exit code can be captured. Disable it around the call.
-          set +e
-          claude "${args[@]}" < review-input.md > review.json
-          CLAUDE_EXIT=$?
-          set -e
-          echo "claude_exit=${CLAUDE_EXIT}" >> "$GITHUB_OUTPUT"
-          echo "claude exited with ${CLAUDE_EXIT}"
-
-          CLAUDE_SUBTYPE=""
-          if [ -s review.json ]; then
-            jq '{is_error, subtype, total_cost_usd, num_turns}' review.json || true
-            CLAUDE_SUBTYPE=$(jq -r '.subtype // empty' review.json 2>/dev/null || true)
-          fi
-          echo "claude_subtype=${CLAUDE_SUBTYPE}" >> "$GITHUB_OUTPUT"
-
-          # Do not fail here — the comment step runs first so the PR always
-          # gets feedback. The job is failed at the end if this exited non-zero.
-          exit 0
+          bash .github/scripts/aggregate-review.sh "${args[@]}"
+          cat comment.md
 
       - name: Post or update review comment
-        if: always()
         uses: actions/github-script@v7
-        env:
-          REVIEW_ID: ${{ matrix.id }}
-          HEADING: ${{ matrix.heading }}
-          LIST_KEY: ${{ matrix.list_key }}
-          LIST_HEADING: ${{ matrix.list_heading }}
-          KIND_KEY: ${{ matrix.kind_key }}
-          KIND_HEADER: ${{ matrix.kind_header }}
-          EMPTY_MESSAGE: ${{ matrix.empty_message }}
-          CLAUDE_SUBTYPE: ${{ steps.review.outputs.claude_subtype }}
         with:
           script: |
             const fs = require('fs');
-            const heading = process.env.HEADING;
-            const listKey = process.env.LIST_KEY;
-            const listHeading = process.env.LIST_HEADING;
-            const kindKey = process.env.KIND_KEY;
-            const kindHeader = process.env.KIND_HEADER;
-            const emptyMessage = process.env.EMPTY_MESSAGE;
-            const budgetHit = process.env.CLAUDE_SUBTYPE === 'error_max_budget_usd';
-            const MARKER = ``;
-            const cell = s => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+            const MARKER = '<!-- ducknet-reviewflow -->';
+            if (!fs.existsSync('comment.md')) {
+              core.setFailed('comment.md was not produced');
+              return;
+            }
+            const body = `${MARKER}\n${fs.readFileSync('comment.md', 'utf8')}\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_`;
 
             const { owner, repo } = context.repo;
             const issue_number = context.payload.pull_request.number;
@@ -187,69 +327,6 @@ jobs:
             });
             const existing = comments.find(c => c.body && c.body.includes(MARKER));
 
-            let env = null;
-            try { env = JSON.parse(fs.readFileSync('review.json', 'utf8')); } catch { env = null; }
-
-            const so = env && env.structured_output;
-
-            // A truncated/degraded run with nothing new to say should not
-            // clobber a previously complete review comment on this PR.
-            if (!so && existing) {
-              core.warning(`${heading}: no structured output this run (budgetHit=${budgetHit}); leaving the existing review comment in place.`);
-              return;
-            }
-
-            let body;
-
-            if (so && typeof so.verdict === 'string') {
-              const approved = so.verdict === 'approve';
-              const out = [`## ${approved ? '✅' : '⚠️'} Claude ${heading} — **${approved ? 'approve' : 'request changes'}**`, ''];
-
-              const items = Array.isArray(so[listKey]) ? so[listKey] : [];
-              if (items.length === 0) {
-                out.push(emptyMessage);
-              } else {
-                out.push(`### ${listHeading} (${items.length})`, '');
-                out.push(`| ${kindHeader} | Severity | File | Detail |`, '|---|---|---|---|');
-                for (const item of items) {
-                  const kind = cell(item[kindKey]);
-                  out.push(`| ${kind} | ${cell(item.severity)} | ${item.file ? '`' + cell(item.file) + '`' : '—'} | ${cell(item.detail)} |`);
-                }
-              }
-
-              const notes = Array.isArray(so.notes) ? so.notes : [];
-              if (notes.length) {
-                out.push('', '### Notes');
-                for (const n of notes) out.push(`- ${cell(n)}`);
-              }
-
-              const cost = typeof env.total_cost_usd === 'number' ? `$${env.total_cost_usd.toFixed(4)}` : 'n/a';
-              const sha = context.payload.pull_request.head.sha.slice(0, 7);
-              out.push('', `<sub>Advisory only — \`ci.yml\` decides merge. Cost estimate ${cost} · commit ${sha}</sub>`);
-              body = out.join('\n');
-            } else if (budgetHit) {
-              body = [
-                `## ⚠️ Claude ${heading} — truncated (budget exceeded)`,
-                '',
-                'The review hit its cost budget partway through and did not finish, so no verdict is available.',
-                'See the workflow run log for details.',
-              ].join('\n');
-            } else {
-              const raw = env && typeof env.result === 'string' ? env.result : '(no output captured)';
-              body = [
-                `## ⚠️ Claude ${heading} — degraded`,
-                '',
-                'The review did not return a schema-conforming result, so no verdict is available.',
-                'See the workflow run log for details.',
-                '',
-                '```',
-                raw.slice(0, 4000),
-                '```',
-              ].join('\n');
-            }
-
-            body = `${MARKER}\n${body}\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_`;
-
             if (existing) {
               await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
               core.info(`Updated existing review comment ${existing.id}`);
@@ -257,17 +334,3 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
               core.info('Created review comment');
             }
-
-      - name: Fail if the review could not run
-        # always() so this still runs if the comment step failed.
-        if: always() && steps.review.outputs.claude_exit != '0'
-        env:
-          CLAUDE_SUBTYPE: ${{ steps.review.outputs.claude_subtype }}
-        run: |
-          if [ "$CLAUDE_SUBTYPE" = "error_max_budget_usd" ]; then
-            echo "::warning::The Claude review hit its cost budget and was cut off mid-review."
-            exit 0
-          fi
-          echo "::error::The Claude review step failed. This is an infrastructure"
-          echo "::error::failure (auth, network), not a review verdict."
-          exit 1

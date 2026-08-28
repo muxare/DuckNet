@@ -51,7 +51,7 @@ src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox; upc
 src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db
 tests/                        # kernel + AlarmCenter + DashboardCenter
 infra/docker/                 # one Dockerfile per Center
-.github/workflows/            # ci.yml, claude-review.yml, deploy-center.yml
+.github/workflows/            # ci.yml, Codex-review.yml, deploy-center.yml
 ```
 
 ## Build & test
@@ -67,47 +67,41 @@ Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 5). Forma
 
 ## PR review
 
-`claude-review.yml` is a ReviewFlow-style loop: **triage → specialists → one
-aggregated comment**. Specialists are isolated (no shared conversation); they
-read `review-state.json` plus a file-subset diff. Aggregation is `jq`, not a
-model.
+Every PR gets two headless Codex reviews (`Codex-review.yml`), each via
+`Codex -p --output-format json --json-schema`, each with its own sticky comment:
 
-| Stage | Prompt / job | Output | Looks for |
-|--------|--------------|--------|-----------|
-| Triage | `triage.md` (Haiku, no tools, ~$0.10) | `review-state.json` | Risk + which specialists to run |
-| Architecture | `architecture-review.md` (Haiku, if requested) | findings | The five rules above |
-| Security | `security-review.md` (Haiku, if requested) | findings | Secrets, payload parse, auth |
-| Aggregate | `.github/scripts/aggregate-review.sh` | one sticky comment | Merge only — no Claude |
+| Review | Prompt | Output | Looks for |
+|--------|--------|--------|-----------|
+| Architecture | `architecture-review.md` | `{ verdict, violations[], notes[] }` | The five rules above |
+| Code | `code-review.md` | `{ verdict, findings[], notes[] }` | Bugs, tests, security, reliability, contract breaks |
 
-**Advisory** — `ci.yml` decides merge. Review jobs fail only on infrastructure
-(missing `CLAUDE_CODE_OAUTH_TOKEN`), never on a `request_changes` verdict.
-Drafts and docs-only PRs (`docs/**`, `*.md`, `*.html`) are skipped. Low-risk
-PRs skip specialists after triage. `code-review.md` is kept on disk but not
-invoked until this loop is boring.
+**Both are advisory** — `ci.yml` decides merge. Drafts and docs-only PRs
+(`docs/**`, `*.md`, `*.html`) are skipped. Architecture uses Haiku with no
+tools; code uses Sonnet with `--max-turns 4` and a $0.15 cap.
 
-Mention `@claude` on any PR or issue to ask questions interactively
-(`claude.yml`).
+Mention `@Codex` on any PR or issue to ask questions interactively
+(`Codex.yml`).
 
-Requires the repo secret `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`).
+Requires the repo secret `CLAUDE_CODE_OAUTH_TOKEN` (`Codex setup-token`).
 
 ## Agent automation opportunities (CCA-F)
 
 DuckNet is a CCA-F study lab. While working, **spot and propose** reusable agent machinery — do not silently add files, and do not dump exam theory here. Prefer project-scoped paths so teammates inherit them on clone.
 
-**Pick the primitive** (D3): `CLAUDE.md` is always-on standards; skills/commands are on-demand. Hooks enforce what prompts only hope for.
+**Pick the primitive** (D3): `AGENTS.md` is always-on standards; skills/commands are on-demand. Hooks enforce what prompts only hope for.
 
 | Need | Where |
 |------|--------|
 | Always-on rules, layout, commands to run | this file |
-| Task-specific procedure Claude may auto-invoke | `.claude/skills/<name>/SKILL.md` |
-| Human-triggered team workflow (`/foo`) | `.claude/commands/<name>.md`, or a skill with `disable-model-invocation: true` |
+| Task-specific procedure Codex may auto-invoke | `.Codex/skills/<name>/SKILL.md` |
+| Human-triggered team workflow (`/foo`) | `.Codex/commands/<name>.md`, or a skill with `disable-model-invocation: true` |
 | Must-happen side effect (format, block, gate) | hook (`PreToolUse` / `PostToolUse`), not a prompt |
 | Verbose or exploratory work | skill with `context: fork`, or a subagent — keep the parent context clean |
 
 **Hunt for:**
 
 - Repeated prompts, step checklists, or “remember to…” — skill with a sharp `description` (drives auto-invoke), `argument-hint`, and supporting files. Fork if the output is noisy.
-- Shared `/review`, `/run-demo`, `/new-center` style workflows — project command in `.claude/commands/` (not `~/.claude/commands/`).
+- Shared `/review`, `/run-demo`, `/new-center` style workflows — project command in `.Codex/commands/` (not `~/.Codex/commands/`).
 - Prompt-only “must” rules that still fail — hook. Deterministic compliance beats hoping the model obeys.
 - Work with a verifiable stop (tests green, demo runs, schema valid) — an **agentic loop**: model-driven `tool_use` until `end_turn`; stop on evidence, not an arbitrary turn cap. Feed tool results back in; do not parse prose for “done”.
 - Multi-concern or parallel investigation — coordinator + isolated subagents; pass complete findings in the child prompt (subagents do not inherit parent context).

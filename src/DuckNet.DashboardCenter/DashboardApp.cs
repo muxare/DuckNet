@@ -60,6 +60,7 @@ public static class DashboardApp
         builder.Services.AddSingleton(inbox);
         builder.Services.AddSingleton(offsets);
         builder.Services.AddSingleton(readModel);
+        builder.Services.AddSingleton(new DeadLetterStore());
         builder.Services.AddSingleton(inner);
         builder.Services.AddSingleton<IEventBus>(duplicator);
         builder.Services.AddSingleton(duplicator);
@@ -74,7 +75,8 @@ public static class DashboardApp
             inbox,
             offsets,
             readModel,
-            sp.GetRequiredService<HttpLogTailFeeder>()));
+            sp.GetRequiredService<HttpLogTailFeeder>(),
+            deadLetters: sp.GetRequiredService<DeadLetterStore>()));
 
         builder.Services.AddHostedService<DashboardFeederHostedService>();
         builder.Services.AddHostedService<DashboardConsumerHostedService>();
@@ -103,18 +105,37 @@ public static class DashboardApp
             await consumer.RebuildAsync(ct);
             return Results.Accepted(value: new { status = "replaying" });
         });
-        app.MapGet("/stats", (KernelDb kernelDb, DashboardReadModel model, ConsumerOffsetStore offsetStore) =>
+        app.MapGet("/dlq", (KernelDb kernelDb, DeadLetterStore dlq) =>
+        {
+            var rows = kernelDb.Read(conn => dlq.List(conn, DashboardConsumer.ConsumerGroup));
+            return Results.Json(rows);
+        });
+        app.MapPost("/dlq/{id:long}/replay", (long id, bool fix, DashboardConsumer consumer) =>
+        {
+            return consumer.TryReplay(id, fix)
+                ? Results.Ok(new { id, status = "replayed", fix })
+                : Results.NotFound();
+        });
+        app.MapPost("/dlq/{id:long}/skip", (long id, DashboardConsumer consumer) =>
+        {
+            return consumer.TrySkip(id)
+                ? Results.Ok(new { id, status = "skipped" })
+                : Results.NotFound();
+        });
+        app.MapGet("/stats", (KernelDb kernelDb, DashboardReadModel model, ConsumerOffsetStore offsetStore, DeadLetterStore dlq) =>
         {
             var total = kernelDb.Read(conn => model.TotalCount(conn));
             var volume = kernelDb.Read(conn => model.TotalVolumeDb(conn));
             var rows = kernelDb.Read(conn => model.List(conn));
+            var dlqCount = kernelDb.Read(conn => dlq.Count(conn, DashboardConsumer.ConsumerGroup));
             return Results.Json(new
             {
                 totalSqueaks = total,
                 totalVolumeDb = volume,
                 rowCount = rows.Count,
                 lastOffset = offsetStore.LastOffset,
-                database = kernelDb.DataSource
+                database = kernelDb.DataSource,
+                dlqCount
             });
         });
 

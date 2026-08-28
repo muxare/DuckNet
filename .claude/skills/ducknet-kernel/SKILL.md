@@ -20,7 +20,7 @@ Single-process kernel console plus the durable primitives library used by Center
 - `EventId` is the idempotency key. Duplicates keep the same id.
 - `SubscribeAsync(consumerGroup, …)` — group is a logical subscriber. Inbox and offsets are keyed by group.
 - Hostile middleware applies **after** log read, never before append.
-- Do not implement later steps early. DLQ / hot partitions land on Steps 7–8. RabbitMQ is Step 11.
+- Do not implement later steps early. Hot partitions land on Step 8. RabbitMQ is Step 11.
 
 ## Step 0 map
 
@@ -84,6 +84,24 @@ Simulator → Tx(state + outbox) → OutboxDispatcher → event_log
 | Mis-demo | `--mis-demo` still disables inbox **and** sequencer; log/outbox stay on |
 
 `last_offset` is a contiguous prefix (shuffle can deliver offsets out of order). Demo file: `ducknet-kernel.db`; `--reset-db` for a clean start.
+
+## Step 7 map
+
+```
+Log → hostile bus → sequencer → RetryPipeline → handler
+  fail N times → dead_letter_queue + advance last_offset → next event
+  replay/skip is a Center (or kernel CLI) tool, not a bus operation
+```
+
+| Piece | Role |
+|-------|------|
+| `RetryPipeline` | Wrap handler; catch; exponential backoff; max 5 |
+| `dead_letter_queue` | Consumer-owned SQLite; error + envelope JSON |
+| Poison | `INJECT_POISON_EVENT` / `POST /bus/poison` / `--inject-poison` — malformed `Squeaked` payload |
+| Replay | CLI `--replay-dlq <id> --fix` or `POST /dlq/{id}/replay?fix=true` |
+| Skip | `--skip-dlq <id>` or `POST /dlq/{id}/skip` |
+
+Inbox is **not** marked on DLQ so replay can apply. Offset **is** marked so the poison cannot stall catch-up. Sequencer already advanced when the envelope was released. Replay bypasses the sequencer.
 
 ## Changing the kernel
 

@@ -2,6 +2,21 @@ namespace DuckNet.Kernel.Persistence;
 
 public static class CenterSchema
 {
+    public const string DeadLetterQueue = """
+        CREATE TABLE IF NOT EXISTS dead_letter_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          consumer_group TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          error TEXT NOT NULL,
+          failed_at TEXT NOT NULL,
+          attempts INTEGER NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS dlq_group_event
+          ON dead_letter_queue (consumer_group, event_id);
+        """;
+
     public const string Telemetry = """
         CREATE TABLE IF NOT EXISTS event_log (
           offset INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +63,7 @@ public static class CenterSchema
           last_seq INTEGER NOT NULL,
           PRIMARY KEY (consumer_group, duck_id)
         );
-        """;
+        """ + DeadLetterQueue;
 
     public const string Alarm = """
         CREATE TABLE IF NOT EXISTS outbox (
@@ -102,7 +117,7 @@ public static class CenterSchema
           raised_at TEXT NOT NULL,
           event_id TEXT NOT NULL UNIQUE
         );
-        """;
+        """ + DeadLetterQueue;
 
     public const string Dashboard = """
         CREATE TABLE IF NOT EXISTS consumer_offsets (
@@ -124,5 +139,5 @@ public static class CenterSchema
           volume_db REAL,
           PRIMARY KEY (duck_id, hour_utc)
         );
-        """;
+        """ + DeadLetterQueue;
 }

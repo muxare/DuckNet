@@ -1,5 +1,6 @@
 using DuckNet.Contracts;
 using DuckNet.EventBus;
+using DuckNet.Kernel;
 using DuckNet.Kernel.Consumer;
 using DuckNet.Kernel.Persistence;
 
@@ -15,6 +16,8 @@ public sealed class DashboardConsumer
     private readonly ConsumerOffsetStore _offsets;
     private readonly DashboardReadModel _readModel;
     private readonly EventUpcasterPipeline _upcasters;
+    private readonly RetryPipeline _retry;
+    private readonly DeadLetterStore _deadLetters;
     private readonly HttpLogTailFeeder? _feeder;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly TextWriter _output;
@@ -27,7 +30,9 @@ public sealed class DashboardConsumer
         DashboardReadModel readModel,
         HttpLogTailFeeder? feeder = null,
         TextWriter? output = null,
-        EventUpcasterPipeline? upcasters = null)
+        EventUpcasterPipeline? upcasters = null,
+        RetryPipeline? retry = null,
+        DeadLetterStore? deadLetters = null)
     {
         _eventBus = eventBus;
         _db = db;
@@ -37,11 +42,15 @@ public sealed class DashboardConsumer
         _feeder = feeder;
         _output = output ?? Console.Out;
         _upcasters = upcasters ?? EventUpcasterPipeline.Default;
+        _retry = retry ?? new RetryPipeline();
+        _deadLetters = deadLetters ?? new DeadLetterStore();
     }
 
     public long HandledCount { get; private set; }
 
     public long AttemptCount { get; private set; }
+
+    public long DeadLetteredCount { get; private set; }
 
     public ConsumerOffsetStore Offsets => _offsets;
 
@@ -74,6 +83,7 @@ public sealed class DashboardConsumer
             });
             HandledCount = 0;
             AttemptCount = 0;
+            DeadLetteredCount = 0;
 
             if (_feeder is not null)
             {
@@ -97,6 +107,45 @@ public sealed class DashboardConsumer
         }
 
         AttemptCount++;
+        var result = _retry.Execute(() => HandleCore(envelope));
+        if (!result.Succeeded)
+        {
+            DeadLetter(envelope, result);
+        }
+    }
+
+    public bool TryReplay(long id, bool fix = false)
+    {
+        var row = _db.Read(conn => _deadLetters.GetById(conn, id));
+        if (row is null)
+        {
+            return false;
+        }
+
+        var envelope = _deadLetters.EnvelopeOf(row);
+        if (fix)
+        {
+            envelope = PoisonEvents.WithValidSqueakedPayload(envelope);
+        }
+
+        try
+        {
+            HandleCore(envelope);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _output.WriteLine($"Replay failed for DLQ {id}: {ex.Message}");
+            return false;
+        }
+
+        return _db.Write((conn, tx) => _deadLetters.Delete(conn, tx, id));
+    }
+
+    public bool TrySkip(long id) =>
+        _db.Write((conn, tx) => _deadLetters.Delete(conn, tx, id));
+
+    private void HandleCore(EventEnvelope envelope)
+    {
         var current = _upcasters.Upcast(envelope);
         var squeaked = SqueakedEnvelope.Parse(current);
         var applied = _db.Write((conn, tx) =>
@@ -119,6 +168,23 @@ public sealed class DashboardConsumer
         {
             HandledCount++;
         }
+    }
+
+    private void DeadLetter(EventEnvelope envelope, RetryResult result)
+    {
+        DeadLetteredCount++;
+        var error = $"{result.Error!.GetType().Name}: {result.Error.Message}";
+        _output.WriteLine(
+            $"Dead-letter {envelope.EventId} after {result.Attempts} attempts: {result.Error.Message}");
+
+        _db.Write((conn, tx) =>
+        {
+            _deadLetters.Insert(conn, tx, ConsumerGroup, envelope, error, result.Attempts);
+            if (envelope.LogOffset > 0)
+            {
+                _offsets.MarkProcessed(conn, tx, envelope.LogOffset);
+            }
+        });
     }
 
     private void AdvanceOffset(long logOffset)

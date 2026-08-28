@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 6 — schema evolution across a boundary**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 7 — poison messages + DLQ**.
 
 ## Rules
 
@@ -25,6 +25,36 @@ dotnet test
 ```
 
 ## Demos
+
+### Step 7 — poison + DLQ (Aspire)
+
+One malformed `Squeaked` never blocks the partition. Each Center retries, writes its own `dead_letter_queue`, advances `last_offset`, and keeps consuming. Inspect `GET /dlq`. Replay with a fixed payload or skip.
+
+```bash
+dotnet run --project src/DuckNet.AppHost
+```
+
+Aspire dashboard: `telemetry`, `alarm`, and `dashboard` healthy. From Telemetry:
+
+```bash
+curl -X POST http://<telemetry>/bus/poison
+curl http://<alarm>/dlq
+curl -X POST http://<alarm>/dlq/1/replay?fix=true
+```
+
+`GET /stats` includes `dlqCount`. Env `INJECT_POISON_EVENT=true` on Telemetry appends one poison row at startup.
+
+Agent shortcut: `/run-aspire`.
+
+### Step 7 — kernel poison demo
+
+```bash
+dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5 --inject-poison
+dotnet run --project src/DuckNet.Kernel -- --list-dlq
+dotnet run --project src/DuckNet.Kernel -- --replay-dlq 1 --fix
+```
+
+`Log rows == Counted + 1`, `DLQ rows == 1` before replay.
 
 ### Step 6 — mixed v1/v2 log, upcast at each Center (Aspire)
 
@@ -65,9 +95,9 @@ dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 
 Agent shortcuts: `/run-demo`, `/mis-demo`.
 
-**What to look for (kernel):** with defenses on, `Published (session) == Counted (lifetime)` on a fresh DB, `Log rows == Counted`, and `Out of order == 0`.
+**What to look for (Aspire):** Click DashboardCenter — Vue table still fills after a poison inject. Alarm and Dashboard `/dlq` show the error + payload. `/stats` `dlqCount` is 1 until replay or skip. `/stats` `database` is still each Center's file, never `telemetry.db`.
 
-**What to look for (Aspire):** Click DashboardCenter — Vue table of `squeaks_by_duck_hour` with live totals. `/stats` `database` is `dashboard.db`, never `telemetry.db`. Rebuild from the UI (or `POST /dashboard/rebuild`) refills the same rows. New squeaks show `Version: 2` and a `volumeDb`. AlarmCenter `/alarms` still lists threshold crossings.
+**What to look for (kernel):** with defenses on, `Published (session) == Counted (lifetime)` on a fresh DB, `Log rows == Counted`, and `Out of order == 0`. With `--inject-poison`, `Log rows == Counted + 1` and `DLQ rows == 1`.
 
 ## Layout
 
@@ -75,10 +105,10 @@ Agent shortcuts: `/run-demo`, `/mis-demo`.
 src/DuckNet.AppHost/          # Aspire orchestration
 src/DuckNet.Contracts/        # event records + versions only
 src/DuckNet.EventBus/         # IEventBus + HTTP log adapter + upcasters
-src/DuckNet.Kernel/           # durable primitives + Step 3 console
-src/DuckNet.TelemetryCenter/  # owns event_log
-src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised
-src/DuckNet.DashboardCenter/  # disposable read model + Vue UI + rebuild
+src/DuckNet.Kernel/           # durable primitives + console (retry, DLQ CLI)
+src/DuckNet.TelemetryCenter/  # owns event_log; POST /bus/poison
+src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised, DLQ
+src/DuckNet.DashboardCenter/  # disposable read model + Vue UI + DLQ
 tests/
 infra/docker/                 # one image per Center
 ```
@@ -100,8 +130,9 @@ infra/docker/                 # one image per Center
 | 3 | complete | Durable log + outbox → kill/restart, no double-count |
 | 4 | complete | Two Centers, two DBs; Alarm catches up from the log |
 | 5 | complete | Delete the dashboard, rebuild from the log |
-| 6 | in progress | Mixed v1/v2 log; upcast at the consumer, not in the bus |
-| 7+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 6 | complete | Mixed v1/v2 log; upcast at the consumer, not in the bus |
+| 7 | in progress | One poison message; retry → DLQ; stream continues |
+| 8+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

@@ -11,6 +11,9 @@ public sealed class SqueakCounter
     private readonly Inbox _inbox;
     private readonly PerKeySequencer? _sequencer;
     private readonly ConsumerCheckpoint? _checkpoint;
+    private readonly RetryPipeline? _retry;
+    private readonly DeadLetterStore? _deadLetters;
+    private readonly KernelDb? _db;
     private readonly EventUpcasterPipeline _upcasters;
     private readonly TimeSpan _gapTimeout;
     private readonly int _logEvery;
@@ -31,13 +34,19 @@ public sealed class SqueakCounter
         TimeSpan? gapTimeout = null,
         ConsumerCheckpoint? checkpoint = null,
         IReadOnlyDictionary<string, DuckCount>? restoredCounts = null,
-        EventUpcasterPipeline? upcasters = null)
+        EventUpcasterPipeline? upcasters = null,
+        RetryPipeline? retry = null,
+        DeadLetterStore? deadLetters = null,
+        KernelDb? db = null)
     {
         _eventBus = eventBus;
         _consumerGroup = consumerGroup;
         _inbox = inbox ?? new Inbox(consumerGroup);
         _sequencer = sequencerEnabled ? sequencer ?? new PerKeySequencer() : null;
         _checkpoint = checkpoint;
+        _retry = retry;
+        _deadLetters = deadLetters;
+        _db = db;
         _upcasters = upcasters ?? EventUpcasterPipeline.Default;
         _gapTimeout = gapTimeout ?? TimeSpan.FromSeconds(5);
         _logEvery = logEvery;
@@ -62,6 +71,8 @@ public sealed class SqueakCounter
     public long AttemptCount { get; private set; }
 
     public long OutOfOrderCount { get; private set; }
+
+    public long DeadLetteredCount { get; private set; }
 
     public PerKeySequencer? Sequencer => _sequencer;
 
@@ -107,6 +118,65 @@ public sealed class SqueakCounter
 
     private void HandleReady(EventEnvelope envelope)
     {
+        if (_retry is null || _deadLetters is null || _db is null)
+        {
+            HandleReadyCore(envelope);
+            return;
+        }
+
+        var result = _retry.Execute(() => HandleReadyCore(envelope));
+        if (result.Succeeded)
+        {
+            return;
+        }
+
+        DeadLetter(envelope, result);
+    }
+
+    public bool TryReplay(long id, bool fix = false)
+    {
+        if (_deadLetters is null || _db is null)
+        {
+            return false;
+        }
+
+        var row = _db.Read(conn => _deadLetters.GetById(conn, id));
+        if (row is null)
+        {
+            return false;
+        }
+
+        var envelope = _deadLetters.EnvelopeOf(row);
+        if (fix)
+        {
+            envelope = PoisonEvents.WithValidSqueakedPayload(envelope);
+        }
+
+        try
+        {
+            HandleReadyCore(envelope);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _output.WriteLine($"Replay failed for DLQ {id}: {ex.Message}");
+            return false;
+        }
+
+        return _db.Write((conn, tx) => _deadLetters.Delete(conn, tx, id));
+    }
+
+    public bool TrySkip(long id)
+    {
+        if (_deadLetters is null || _db is null)
+        {
+            return false;
+        }
+
+        return _db.Write((conn, tx) => _deadLetters.Delete(conn, tx, id));
+    }
+
+    private void HandleReadyCore(EventEnvelope envelope)
+    {
         var squeaked = SqueakedEnvelope.Parse(_upcasters.Upcast(envelope));
 
         if (_checkpoint is not null)
@@ -141,32 +211,49 @@ public sealed class SqueakCounter
             return;
         }
 
-        if (squeaked.SequenceNumber != last + 1)
-        {
-            OutOfOrderCount++;
-            _output.WriteLine(
-                $"Out of order {squeaked.DuckId} seq {squeaked.SequenceNumber} after {last}");
-        }
-
-        _lastSeqByDuck[squeaked.DuckId] = squeaked.SequenceNumber;
-        TotalCount++;
-        _countsByDuck[squeaked.DuckId] = _countsByDuck.GetValueOrDefault(squeaked.DuckId) + 1;
+        NoteApplied(squeaked, last);
         LogProgress();
     }
 
     private void ApplySideEffect(Squeaked squeaked)
     {
         var last = _lastSeqByDuck.GetValueOrDefault(squeaked.DuckId, 0);
-        if (squeaked.SequenceNumber != last + 1)
+        NoteApplied(squeaked, last);
+    }
+
+    private void NoteApplied(Squeaked squeaked, long last)
+    {
+        if (squeaked.SequenceNumber > last)
         {
-            OutOfOrderCount++;
-            _output.WriteLine(
-                $"Out of order {squeaked.DuckId} seq {squeaked.SequenceNumber} after {last}");
+            if (squeaked.SequenceNumber != last + 1)
+            {
+                OutOfOrderCount++;
+                _output.WriteLine(
+                    $"Out of order {squeaked.DuckId} seq {squeaked.SequenceNumber} after {last}");
+            }
+
+            _lastSeqByDuck[squeaked.DuckId] = squeaked.SequenceNumber;
         }
 
-        _lastSeqByDuck[squeaked.DuckId] = squeaked.SequenceNumber;
         TotalCount++;
         _countsByDuck[squeaked.DuckId] = _countsByDuck.GetValueOrDefault(squeaked.DuckId) + 1;
+    }
+
+    private void DeadLetter(EventEnvelope envelope, RetryResult result)
+    {
+        DeadLetteredCount++;
+        var error = $"{result.Error!.GetType().Name}: {result.Error.Message}";
+        _output.WriteLine(
+            $"Dead-letter {envelope.EventId} after {result.Attempts} attempts: {result.Error.Message}");
+
+        _db!.Write((conn, tx) =>
+        {
+            _deadLetters!.Insert(conn, tx, _consumerGroup, envelope, error, result.Attempts);
+            if (envelope.LogOffset > 0 && _checkpoint is not null)
+            {
+                _checkpoint.Offsets.MarkProcessed(conn, tx, envelope.LogOffset);
+            }
+        });
     }
 
     private void LogSkip(Guid eventId)

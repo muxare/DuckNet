@@ -1,5 +1,6 @@
 using DuckNet.Contracts;
 using DuckNet.EventBus;
+using DuckNet.Kernel;
 using DuckNet.Kernel.Consumer;
 using DuckNet.Kernel.Persistence;
 
@@ -16,6 +17,8 @@ public sealed class AlarmConsumer
     private readonly PerKeySequencer? _sequencer;
     private readonly AlarmStore _alarms;
     private readonly EventUpcasterPipeline _upcasters;
+    private readonly RetryPipeline _retry;
+    private readonly DeadLetterStore _deadLetters;
     private readonly TextWriter _output;
     private readonly TimeSpan _gapTimeout;
 
@@ -28,7 +31,9 @@ public sealed class AlarmConsumer
         PerKeySequencer? sequencer,
         TextWriter? output = null,
         TimeSpan? gapTimeout = null,
-        EventUpcasterPipeline? upcasters = null)
+        EventUpcasterPipeline? upcasters = null,
+        RetryPipeline? retry = null,
+        DeadLetterStore? deadLetters = null)
     {
         _eventBus = eventBus;
         _db = db;
@@ -39,6 +44,8 @@ public sealed class AlarmConsumer
         _output = output ?? Console.Out;
         _gapTimeout = gapTimeout ?? TimeSpan.FromSeconds(5);
         _upcasters = upcasters ?? EventUpcasterPipeline.Default;
+        _retry = retry ?? new RetryPipeline();
+        _deadLetters = deadLetters ?? new DeadLetterStore();
     }
 
     public long HandledCount { get; private set; }
@@ -46,6 +53,8 @@ public sealed class AlarmConsumer
     public long RaisedCount { get; private set; }
 
     public long AttemptCount { get; private set; }
+
+    public long DeadLetteredCount { get; private set; }
 
     public ConsumerOffsetStore Offsets => _offsets;
 
@@ -81,6 +90,45 @@ public sealed class AlarmConsumer
 
     private void HandleReady(EventEnvelope envelope)
     {
+        var result = _retry.Execute(() => HandleReadyCore(envelope));
+        if (!result.Succeeded)
+        {
+            DeadLetter(envelope, result);
+        }
+    }
+
+    public bool TryReplay(long id, bool fix = false)
+    {
+        var row = _db.Read(conn => _deadLetters.GetById(conn, id));
+        if (row is null)
+        {
+            return false;
+        }
+
+        var envelope = _deadLetters.EnvelopeOf(row);
+        if (fix)
+        {
+            envelope = PoisonEvents.WithValidSqueakedPayload(envelope);
+        }
+
+        try
+        {
+            HandleReadyCore(envelope);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _output.WriteLine($"Replay failed for DLQ {id}: {ex.Message}");
+            return false;
+        }
+
+        return _db.Write((conn, tx) => _deadLetters.Delete(conn, tx, id));
+    }
+
+    public bool TrySkip(long id) =>
+        _db.Write((conn, tx) => _deadLetters.Delete(conn, tx, id));
+
+    private void HandleReadyCore(EventEnvelope envelope)
+    {
         var current = _upcasters.Upcast(envelope);
         var squeaked = SqueakedEnvelope.Parse(current);
         var (applied, raised) = _db.Write((conn, tx) =>
@@ -112,6 +160,23 @@ public sealed class AlarmConsumer
             _output.WriteLine(
                 $"AlarmRaised {squeaked.DuckId} after {HandledCount} unique squeaks (EventId={envelope.EventId})");
         }
+    }
+
+    private void DeadLetter(EventEnvelope envelope, RetryResult result)
+    {
+        DeadLetteredCount++;
+        var error = $"{result.Error!.GetType().Name}: {result.Error.Message}";
+        _output.WriteLine(
+            $"Dead-letter {envelope.EventId} after {result.Attempts} attempts: {result.Error.Message}");
+
+        _db.Write((conn, tx) =>
+        {
+            _deadLetters.Insert(conn, tx, ConsumerGroup, envelope, error, result.Attempts);
+            if (envelope.LogOffset > 0)
+            {
+                _offsets.MarkProcessed(conn, tx, envelope.LogOffset);
+            }
+        });
     }
 
     private void AdvanceOffset(long logOffset)

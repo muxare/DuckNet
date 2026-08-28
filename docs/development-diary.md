@@ -2,7 +2,46 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-28 — Step 7: poison messages + DLQ
+
+### What changed
+Each consumer wraps the handler in `RetryPipeline` (5 attempts, exponential backoff). Exhausted retries write that Center's `dead_letter_queue` and still advance contiguous `last_offset`. Inbox is not marked, so replay can apply. Poison is a well-formed envelope with `{not-json` payload — `POST /bus/poison`, `INJECT_POISON_EVENT`, or kernel `--inject-poison`. Inspect `GET /dlq`; replay `?fix=true` or skip.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Log[("event_log")] --> RT[RetryPipeline]
+  RT -->|ok| H[Handler]
+  RT -->|fail N times| DLQ[("dead_letter_queue")]
+  DLQ -->|replay/skip| RT
+  RT -->|keep consuming| Next[next event]
+```
+
+```mermaid
+sequenceDiagram
+  participant Log as event_log
+  participant RT as RetryPipeline
+  participant H as Parse
+  participant Dlq as DLQ
+  Log->>RT: poison Squeaked
+  RT->>H: attempt 1..5
+  H-->>RT: JsonException
+  RT->>Dlq: insert + mark offset
+  Note over RT: seq N+1 still runs
+```
+
+### How to test
+- `dotnet test` — same-key seq 1/poison/3 still counts 2; replay `--fix` counts 3; Alarm and Dashboard HTTP DLQ
+- `dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5 --inject-poison` then `--list-dlq` / `--replay-dlq 1 --fix`
+- Aspire: `POST /bus/poison` then `GET /dlq` on alarm or dashboard
+
+### Follow-ups
+**CCA-F (needs OK):** project command `.claude/commands/dlq.md` (`/dlq`) — list / replay / skip against a running Center. Skill auto-invoke is the wrong primitive (this is a human-triggered ops workflow). Planned MCP `ducknet-mcp-ops` already names DLQ inspect for Step 9+.
+
+**Refactor:** `TryReplay` / `TrySkip` / `DeadLetter` are copy-pasted on three consumers. Extract only if a fourth Center needs it.
+
 ## 2026-08-28 — ReviewFlow MVP (PR review)
+
 
 ### What changed
 `claude-review.yml` is a staged loop: Haiku triage writes `review-state.json` (artifact) → architecture and security run only if requested, each on a file-subset diff → `jq` aggregates one sticky PR comment. Specialists are stateless; they do not talk to each other. `code-review.md` stays on disk but is not invoked. Orchestrator scripts are fixture-tested in `ci.yml` without Claude.

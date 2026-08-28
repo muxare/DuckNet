@@ -45,6 +45,14 @@ Consumer: handle + inbox + counts + contiguous `last_offset` in one transaction.
 
 Tests: uncommitted tx writes neither side; restart from offset does not double-count; replay from 0 reproduces counts.
 
+## Step 7 — Retry + DLQ
+
+**RetryPipeline** wraps the handler (not the bus): catch, exponential backoff, max attempts (default 5). Exhausted → insert `dead_letter_queue` (this Center's SQLite) and still advance contiguous `last_offset`. Inbox is not marked.
+
+Poison is a well-formed envelope with unparseable `PayloadJson`. Inject via `INJECT_POISON_EVENT`, `POST /bus/poison`, or kernel `--inject-poison`. Replay (`--replay-dlq` / `POST /dlq/{id}/replay?fix=true`) or skip (`--skip-dlq` / `POST /dlq/{id}/skip`) is a consumer tool.
+
+Test: same-key seq 1 (good), seq 2 (poison), seq 3 (good) → count 2, one DLQ row, seq 3 applied. Replay with `--fix` → count 3.
+
 ## Anti-patterns
 
 - Parsing “done” from log text instead of counts / test assertions.

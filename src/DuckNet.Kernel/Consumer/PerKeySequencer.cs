@@ -10,6 +10,7 @@ namespace DuckNet.Kernel.Consumer;
 /// </summary>
 public sealed class PerKeySequencer
 {
+    private readonly object _gate = new();
     private readonly Dictionary<string, KeyState> _byKey = new();
 
     public PerKeySequencer(IReadOnlyDictionary<string, long>? lastHandledSequenceByKey = null)
@@ -36,68 +37,83 @@ public sealed class PerKeySequencer
 
     public long GapReportCount { get; private set; }
 
-    public int BufferedCount => _byKey.Values.Sum(s => s.Buffer.Count);
+    public int BufferedCount
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _byKey.Values.Sum(s => s.Buffer.Count);
+            }
+        }
+    }
 
     public IReadOnlyList<EventEnvelope> Offer(
         EventEnvelope envelope,
         DateTimeOffset? now = null)
     {
-        var state = GetOrAdd(envelope.PartitionKey);
-        var seq = envelope.SequenceNumber;
-        var at = now ?? DateTimeOffset.UtcNow;
-
-        if (seq < state.NextExpected)
+        lock (_gate)
         {
-            LateDropCount++;
-            return [];
-        }
+            var state = GetOrAdd(envelope.PartitionKey);
+            var seq = envelope.SequenceNumber;
+            var at = now ?? DateTimeOffset.UtcNow;
 
-        if (seq > state.NextExpected)
-        {
-            if (!state.Buffer.TryAdd(seq, envelope))
+            if (seq < state.NextExpected)
             {
-                state.Buffer[seq] = envelope;
-                BufferedOverwriteCount++;
+                LateDropCount++;
+                return [];
             }
 
-            state.WaitingSince ??= at;
-            return [];
-        }
+            if (seq > state.NextExpected)
+            {
+                if (!state.Buffer.TryAdd(seq, envelope))
+                {
+                    state.Buffer[seq] = envelope;
+                    BufferedOverwriteCount++;
+                }
 
-        var released = new List<EventEnvelope> { envelope };
-        state.NextExpected++;
+                state.WaitingSince ??= at;
+                return [];
+            }
 
-        while (state.Buffer.Remove(state.NextExpected, out var next))
-        {
-            released.Add(next);
+            var released = new List<EventEnvelope> { envelope };
             state.NextExpected++;
-        }
 
-        if (state.Buffer.Count == 0)
-        {
-            state.WaitingSince = null;
-            state.GapLogged = false;
-        }
+            while (state.Buffer.Remove(state.NextExpected, out var next))
+            {
+                released.Add(next);
+                state.NextExpected++;
+            }
 
-        return released;
+            if (state.Buffer.Count == 0)
+            {
+                state.WaitingSince = null;
+                state.GapLogged = false;
+            }
+
+            return released;
+        }
     }
 
     public void ReportGaps(TimeSpan timeout, TextWriter output, DateTimeOffset? now = null)
     {
-        var at = now ?? DateTimeOffset.UtcNow;
-
-        foreach (var (key, state) in _byKey)
+        lock (_gate)
         {
-            if (state.WaitingSince is not { } since || state.GapLogged || at - since < timeout)
-            {
-                continue;
-            }
+            var at = now ?? DateTimeOffset.UtcNow;
 
-            var buffered = string.Join(",", state.Buffer.Keys.OrderBy(s => s));
-            output.WriteLine(
-                $"Gap on {key}: waiting for seq {state.NextExpected}, buffered [{buffered}]");
-            state.GapLogged = true;
-            GapReportCount++;
+            foreach (var (key, state) in _byKey)
+            {
+                if (state.WaitingSince is not { } since || state.GapLogged || at - since < timeout)
+                {
+                    continue;
+                }
+
+                var buffered = string.Join(",", state.Buffer.Keys.OrderBy(s => s));
+                output.WriteLine(
+                    $"Gap on {key}: waiting for seq {state.NextExpected}, buffered [{buffered}]");
+                state.GapLogged = true;
+                GapReportCount++;
+            }
         }
     }
 

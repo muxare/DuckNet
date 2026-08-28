@@ -39,9 +39,9 @@ if (options.SkipDlqId is { } skipId)
 }
 
 Console.WriteLine(
-    $"DuckNet Step 7 — durable log + retry/DLQ for {options.Seconds}s (Ctrl+C to stop early)");
+    $"DuckNet Step 8 — hot partitions + sharded workers for {options.Seconds}s (Ctrl+C to stop early)");
 Console.WriteLine(
-    $"db={options.DatabasePath} reset={options.ResetDatabase} duplicateRate={options.DuplicateRate.ToString("0.00", CultureInfo.InvariantCulture)} shuffle={shuffleState} inbox={inboxState} sequencer={sequencerState} injectPoison={options.InjectPoison}");
+    $"db={options.DatabasePath} reset={options.ResetDatabase} duplicateRate={options.DuplicateRate.ToString("0.00", CultureInfo.InvariantCulture)} shuffle={shuffleState} inbox={inboxState} sequencer={sequencerState} injectPoison={options.InjectPoison} shards={options.ShardCount} loudDuck={options.LoudDuckId ?? "off"} handleDelayMs={options.HandleDelayMs}");
 if (!options.InboxEnabled || !options.SequencerEnabled)
 {
     Console.WriteLine("Mis-demo: consumer defenses off — counts and/or per-key order may be wrong.");
@@ -65,6 +65,11 @@ try
         databasePath: options.DatabasePath,
         resetDatabase: options.ResetDatabase,
         injectPoison: options.InjectPoison,
+        shardCount: options.ShardCount,
+        handleDelay: TimeSpan.FromMilliseconds(options.HandleDelayMs),
+        loudDuckId: options.LoudDuckId,
+        minDelayMs: options.MinDelayMs,
+        maxDelayMs: options.MaxDelayMs,
         cancellationToken: cts.Token);
 
     Console.WriteLine($"Published:   {result.PublishedCount} (session)");
@@ -79,6 +84,22 @@ try
     foreach (var (duckId, count) in result.CountsByDuck.OrderBy(x => x.Key))
     {
         Console.WriteLine($"  {duckId}: {count}");
+    }
+
+    if (result.Shards is { } shards)
+    {
+        Console.WriteLine("Shards:");
+        foreach (var shard in shards.Shards)
+        {
+            Console.WriteLine(
+                $"  shard {shard.Id}: processed={shard.Processed} queued={shard.Queued} lag={shard.Lag} backpressure={shard.Backpressure}");
+        }
+
+        foreach (var key in shards.Keys)
+        {
+            Console.WriteLine(
+                $"  {key.PartitionKey}: shard={key.Shard} processed={key.Processed} lastLagMs={key.LastLagMs} maxLagMs={key.MaxLagMs}");
+        }
     }
 
     if (!options.InboxEnabled && !options.SequencerEnabled && result.DuplicateDeliveries > 0)
@@ -110,6 +131,11 @@ internal static class DemoCli
         long? replayDlqId = null;
         long? skipDlqId = null;
         var fixDlq = false;
+        var shardCount = ParseWindow(Environment.GetEnvironmentVariable("SHARD_COUNT"), 3);
+        var handleDelayMs = ParseNonNegative(Environment.GetEnvironmentVariable("HANDLE_DELAY_MS"), 0);
+        var loudDuckId = EmptyToNull(Environment.GetEnvironmentVariable("LOUD_DUCK_ID"));
+        var minDelayMs = ParseNonNegative(Environment.GetEnvironmentVariable("SQUEAK_MIN_DELAY_MS"), 10);
+        var maxDelayMs = ParseNonNegative(Environment.GetEnvironmentVariable("SQUEAK_MAX_DELAY_MS"), 80);
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -227,6 +253,59 @@ internal static class DemoCli
                 continue;
             }
 
+            if (arg is "--hot-demo")
+            {
+                loudDuckId ??= "duck-1";
+                if (handleDelayMs <= 0)
+                {
+                    handleDelayMs = 8;
+                }
+
+                if (minDelayMs == 10 && maxDelayMs == 80)
+                {
+                    minDelayMs = 0;
+                    maxDelayMs = 1;
+                }
+
+                continue;
+            }
+
+            if (arg == "--loud-duck" && i + 1 < args.Length)
+            {
+                loudDuckId = EmptyToNull(args[++i]) ?? "duck-1";
+                continue;
+            }
+
+            if (arg.StartsWith("--loud-duck=", StringComparison.Ordinal))
+            {
+                loudDuckId = EmptyToNull(arg["--loud-duck=".Length..]) ?? "duck-1";
+                continue;
+            }
+
+            if (arg == "--shard-count" && i + 1 < args.Length)
+            {
+                shardCount = ParseWindow(args[++i], shardCount);
+                continue;
+            }
+
+            if (arg.StartsWith("--shard-count=", StringComparison.Ordinal))
+            {
+                shardCount = ParseWindow(arg["--shard-count=".Length..], shardCount);
+                continue;
+            }
+
+            if (arg == "--handle-delay-ms" && i + 1 < args.Length)
+            {
+                handleDelayMs = ParseNonNegative(args[++i], handleDelayMs);
+                continue;
+            }
+
+            if (arg.StartsWith("--handle-delay-ms=", StringComparison.Ordinal))
+            {
+                handleDelayMs = ParseNonNegative(arg["--handle-delay-ms=".Length..], handleDelayMs);
+                continue;
+            }
+
             if (arg == "--shuffle-window" && i + 1 < args.Length)
             {
                 shuffleWindow = ParseWindow(args[++i], shuffleWindow);
@@ -252,7 +331,12 @@ internal static class DemoCli
             listDlq,
             replayDlqId,
             skipDlqId,
-            fixDlq);
+            fixDlq,
+            shardCount,
+            handleDelayMs,
+            loudDuckId,
+            minDelayMs,
+            maxDelayMs);
     }
 
     private static double ParseRate(string? value, double fallback) =>
@@ -265,6 +349,14 @@ internal static class DemoCli
         int.TryParse(value, CultureInfo.InvariantCulture, out var parsed) && parsed >= 1
             ? parsed
             : fallback;
+
+    private static int ParseNonNegative(string? value, int fallback) =>
+        int.TryParse(value, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0
+            ? parsed
+            : fallback;
+
+    private static string? EmptyToNull(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static bool IsTrue(string? value) =>
         string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
@@ -288,4 +380,9 @@ internal sealed record DemoCliOptions(
     bool ListDlq,
     long? ReplayDlqId,
     long? SkipDlqId,
-    bool FixDlq);
+    bool FixDlq,
+    int ShardCount,
+    int HandleDelayMs,
+    string? LoudDuckId,
+    int MinDelayMs,
+    int MaxDelayMs);

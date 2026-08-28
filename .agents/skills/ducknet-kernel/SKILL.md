@@ -20,7 +20,7 @@ Single-process kernel console plus the durable primitives library used by Center
 - `EventId` is the idempotency key. Duplicates keep the same id.
 - `SubscribeAsync(consumerGroup, …)` — group is a logical subscriber. Inbox and offsets are keyed by group.
 - Hostile middleware applies **after** log read, never before append.
-- Do not implement later steps early. Hot partitions land on Step 8. RabbitMQ is Step 11.
+- Do not implement later steps early. Tracing lands on Step 9. RabbitMQ is Step 11.
 
 ## Step 0 map
 
@@ -102,6 +102,24 @@ Log → hostile bus → sequencer → RetryPipeline → handler
 | Skip | `--skip-dlq <id>` or `POST /dlq/{id}/skip` |
 
 Inbox is **not** marked on DLQ so replay can apply. Offset **is** marked so the poison cannot stall catch-up. Sequencer already advanced when the envelope was released. Replay bypasses the sequencer.
+
+## Step 8 map
+
+```
+Log → hostile bus → hash(PartitionKey) % N → shard worker
+  sequencer → RetryPipeline → handler
+  queued ≥ capacity → backpressure++ (do not block dispatcher)
+```
+
+| Piece | Role |
+|-------|------|
+| `LoudDuck` | One duckId, weight 100 vs 1 per other duck |
+| `PartitionShard` | Stable FNV-1a; same key → same shard |
+| `ShardWorkerPool` | One worker per shard; per-key order kept |
+| `ShardMetrics` | Per-shard lag + per-key `lagMs`; `GET /metrics` |
+| Mis-demo | `--shard-count 1` — quiet ducks wait behind LoudDuck |
+
+Sharding is consumer-owned. Capacity is a backpressure signal, not a blocking `WriteAsync` (that HOL-blocks quiet keys).
 
 ## Changing the kernel
 

@@ -31,6 +31,10 @@ body {
   color: var(--dn-ink);
 }
 
+.stat-card-hot {
+  border-top-color: #c2410c;
+}
+
 .table-duck thead th {
   cursor: pointer;
   user-select: none;

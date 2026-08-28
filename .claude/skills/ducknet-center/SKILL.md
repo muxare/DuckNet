@@ -21,6 +21,7 @@ One process, one SQLite file, one consumer group. Integration is `IEventBus` onl
 - Envelope `Version` is a contract. Upcast in the consumer (`EventUpcasterPipeline`) before `Parse`. See skill `ducknet-event-contract`.
 - Hostile middleware (duplicator, shuffler) applies **after** log read, on the consumer, never before append.
 - Inbox + contiguous `last_offset` (+ Center side effects) commit in one transaction.
+- Shard workers are consumer-owned (`Hash(PartitionKey) % SHARD_COUNT`). Same key → same shard. Do not put sharding inside `IEventBus`.
 
 ## Layout
 
@@ -37,7 +38,7 @@ infra/docker/DuckNet.{Name}Center/Dockerfile
 
 1. Own schema in `CenterSchema` (or Center-local SQL). Include `inbox`, `consumer_offsets`, `outbox`, `dead_letter_queue`. Never copy Telemetry's `event_log` as a query path.
 2. `SubscribeAsync(consumerGroup)` with a unique group name.
-3. Handler: upcast → sequencer (if keyed) → `RetryPipeline` → inbox → side effect → offset, one tx. Exhausted retries → DLQ + offset; do not mark inbox.
+3. Handler: upcast → shard dispatch → sequencer (if keyed) → `RetryPipeline` → inbox → side effect → offset, one tx. Exhausted retries → DLQ + offset; do not mark inbox.
 4. Publish via local outbox; dispatcher appends through the bus (`HttpLogClient.AppendAsync`), not by opening Telemetry SQLite.
 5. Aspire: `AddProject`, `WithHttpHealthCheck("/health")`, `EVENT_LOG_URL` from telemetry HTTP endpoint. No `WithReference` used as a business client.
 6. Tests: csproj isolation; catch-up from log while this Center was down; never opens Telemetry DB.

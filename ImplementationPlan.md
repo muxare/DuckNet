@@ -504,9 +504,9 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] Hot key causes measurable lag without sharding.
-- [ ] With sharding, non-hot ducks stay near real-time.
-- [ ] Lag metrics visible in logs or dashboard.
+- [x] Hot key causes measurable lag without sharding.
+- [x] With sharding, non-hot ducks stay near real-time.
+- [x] Lag metrics visible in logs or dashboard.
 
 **Estimated effort:** ~1–2 evenings.
 

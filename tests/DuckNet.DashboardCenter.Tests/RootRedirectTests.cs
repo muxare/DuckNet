@@ -32,6 +32,11 @@ public class RootRedirectTests
         Assert.Contains("json", response.Content.Headers.ContentType?.MediaType ?? "", StringComparison.OrdinalIgnoreCase);
         Assert.Contains("totalSqueaks", body, StringComparison.Ordinal);
 
+        var metrics = await http.GetAsync("/metrics");
+        var metricsBody = await metrics.Content.ReadAsStringAsync();
+        Assert.True(metrics.IsSuccessStatusCode, $"{metrics.StatusCode}: {metricsBody}");
+        Assert.Contains("shards", metricsBody, StringComparison.OrdinalIgnoreCase);
+
         var home = await http.GetAsync("/");
         Assert.Equal(HttpStatusCode.OK, home.StatusCode);
         var html = await home.Content.ReadAsStringAsync();

@@ -11,6 +11,7 @@ import {
   type SortingState,
 } from "@tanstack/vue-table";
 import {
+  fetchMetrics,
   fetchStats,
   fetchSummary,
   rebuildDashboard,
@@ -39,6 +40,11 @@ const {
   queryFn: fetchStats,
 });
 
+const { data: metrics } = useQuery({
+  queryKey: ["dashboard", "metrics"],
+  queryFn: fetchMetrics,
+});
+
 const {
   mutate: runRebuild,
   isPending: rebuildPending,
@@ -61,6 +67,11 @@ const totalVolume = computed(
   () => summary.value?.totalVolumeDb ?? stats.value?.totalVolumeDb ?? 0,
 );
 const lastOffset = computed(() => stats.value?.lastOffset ?? 0);
+const shards = computed(() => metrics.value?.shards ?? stats.value?.shards ?? []);
+const keyLags = computed(() => metrics.value?.keys ?? stats.value?.keys ?? []);
+const hottest = computed(() =>
+  [...keyLags.value].sort((a, b) => b.maxLagMs - a.maxLagMs)[0],
+);
 const avgDb = computed(() =>
   totalSqueaks.value > 0 ? totalVolume.value / totalSqueaks.value : 0,
 );
@@ -221,6 +232,25 @@ const errorMessage = computed(
         </div>
       </div>
     </div>
+
+    <div v-if="shards.length > 0" class="row g-3 mb-4">
+      <div v-for="shard in shards" :key="shard.id" class="col-12 col-md-4">
+        <div class="card stat-card h-100" :class="{ 'stat-card-hot': shard.queued > 0 || shard.lag > 0 }">
+          <div class="card-body">
+            <div class="text-secondary small text-uppercase">Shard {{ shard.id }}</div>
+            <div class="stat-value fs-4">q {{ shard.queued }} · lag {{ shard.lag }}</div>
+            <div class="text-secondary small mt-1">
+              processed {{ formatNumber(shard.processed) }}
+              · bp {{ shard.backpressure }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p v-if="hottest" class="text-secondary small mb-4">
+      Hottest key <code>{{ hottest.partitionKey }}</code>
+      on shard {{ hottest.shard }} · max lag {{ formatNumber(hottest.maxLagMs) }} ms
+    </p>
 
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white d-flex flex-wrap gap-2 align-items-center justify-content-between">

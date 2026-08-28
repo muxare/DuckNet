@@ -12,9 +12,11 @@ namespace DuckNet.Kernel.Consumer;
 /// </summary>
 public sealed class Inbox
 {
+    private readonly object _gate = new();
     private readonly HashSet<Guid> _processed = [];
     private readonly KernelDb? _db;
     private readonly bool _enabled;
+    private long _duplicateSkipCount;
 
     public Inbox(string consumerGroup, bool enabled = true, KernelDb? db = null)
     {
@@ -28,7 +30,7 @@ public sealed class Inbox
 
     public bool Enabled => _enabled;
 
-    public long DuplicateSkipCount { get; private set; }
+    public long DuplicateSkipCount => Interlocked.Read(ref _duplicateSkipCount);
 
     public bool ShouldHandle(Guid eventId)
     {
@@ -42,17 +44,20 @@ public sealed class Inbox
             var seen = _db.Read(conn => Contains(conn, eventId));
             if (seen)
             {
-                DuplicateSkipCount++;
+                Interlocked.Increment(ref _duplicateSkipCount);
                 return false;
             }
 
             return true;
         }
 
-        if (_processed.Contains(eventId))
+        lock (_gate)
         {
-            DuplicateSkipCount++;
-            return false;
+            if (_processed.Contains(eventId))
+            {
+                Interlocked.Increment(ref _duplicateSkipCount);
+                return false;
+            }
         }
 
         return true;
@@ -71,7 +76,10 @@ public sealed class Inbox
             return;
         }
 
-        _processed.Add(eventId);
+        lock (_gate)
+        {
+            _processed.Add(eventId);
+        }
     }
 
     public bool TryInsert(SqliteConnection connection, SqliteTransaction tx, Guid eventId)
@@ -84,7 +92,7 @@ public sealed class Inbox
         var inserted = InsertRow(connection, tx, eventId);
         if (!inserted)
         {
-            DuplicateSkipCount++;
+            Interlocked.Increment(ref _duplicateSkipCount);
         }
 
         return inserted;
@@ -97,7 +105,10 @@ public sealed class Inbox
         cmd.CommandText = "DELETE FROM inbox WHERE consumer_group = $g";
         cmd.Parameters.AddWithValue("$g", ConsumerGroup);
         cmd.ExecuteNonQuery();
-        _processed.Clear();
+        lock (_gate)
+        {
+            _processed.Clear();
+        }
     }
 
     private bool Contains(SqliteConnection connection, Guid eventId)

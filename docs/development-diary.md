@@ -2,6 +2,49 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-28 — Step 8: backpressure + hot partitions
+
+### What changed
+`LoudDuck` (weight 100) floods one `PartitionKey`. Consumers hash the key to `ShardCount` workers (default 3). Capacity is a backpressure **signal** — the dispatcher does not block on a hot shard, or quiet keys HOL-block on the subscribe loop. Per-shard and per-key lag on `GET /metrics` and the Dashboard cards. `--hot-demo --shard-count 1` vs `3` is the before/after.
+
+SQLite stays. Postgres-from-Step-8 was a locked swap for concurrent writers; the starvation demo is at the worker layer.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Loud[LoudDuck 100x] --> Log[("event_log")]
+  Log --> Hash[FNV PartitionKey]
+  Hash --> S0[shard 0]
+  Hash --> S1[shard 1]
+  Hash --> S2[shard 2]
+  S0 --> M[/metrics lag/]
+  S1 --> M
+  S2 --> M
+```
+
+```mermaid
+sequenceDiagram
+  participant D as dispatcher
+  participant S0 as shard 0 hot
+  participant S1 as shard 1 quiet
+  D->>S0: duck-1
+  D->>S1: duck-2
+  Note over D: queued≥capacity → backpressure++
+  S1-->>D: lag ≈ handleDelay
+  S0-->>D: lag grows
+```
+
+### How to test
+- `dotnet test --filter HotPartition` — starve vs sharded quiet lag; LoudDuck ~100×; backpressure
+- `dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 1 --hot-demo --shard-count 1 --no-shuffle --duplicate-rate 0`
+- same with `--shard-count 3` — compare `maxLagMs`
+- Aspire: Dashboard shard cards; `GET /metrics`
+
+### Follow-ups
+**CCA-F (needs OK):** project command `.claude/commands/hot-demo.md` (`/hot-demo`) — run shard-count 1 then 3 and print the lag table. Human-triggered; skill auto-invoke is the wrong primitive.
+
+**Deferred:** Postgres per Center (locked architecture decision). Needed when shard workers must truly write concurrently; not required for this AC.
+
 ## 2026-08-28 — Step 7: poison messages + DLQ
 
 ### What changed

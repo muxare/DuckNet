@@ -53,6 +53,26 @@ Poison is a well-formed envelope with unparseable `PayloadJson`. Inject via `INJ
 
 Test: same-key seq 1 (good), seq 2 (poison), seq 3 (good) → count 2, one DLQ row, seq 3 applied. Replay with `--fix` → count 3.
 
+## Step 8 — Hot partitions + sharding
+
+```
+Log → hostile bus → hash(PartitionKey) % N → shard channel → worker
+  sequencer → RetryPipeline → handler
+  queued ≥ capacity → backpressure++ (do not block the dispatcher)
+```
+
+| Piece | Role |
+|-------|------|
+| `LoudDuck` | One duckId with weight 100 vs 1 for each other duck |
+| `PartitionShard` | Stable FNV-1a; same key always the same shard |
+| `ShardWorkerPool` | One worker per shard; per-key order preserved |
+| `ShardMetrics` | Per-shard lag (`maxOffset - lastOffset`), queue, backpressure; per-key `lagMs` |
+| Mis-demo | `--shard-count 1` — quiet ducks wait behind LoudDuck |
+
+Sharding is consumer-owned, not inside `IEventBus`. Blocking a bounded `WriteAsync` on the hot shard HOL-blocks quiet keys on the subscribe loop — capacity is a signal, not a wait.
+
+Test: burst hot then quiet on different shards; `SHARD_COUNT=1` quiet lag is large; `SHARD_COUNT=3` quiet lag ≈ handle delay.
+
 ## Anti-patterns
 
 - Parsing “done” from log text instead of counts / test assertions.

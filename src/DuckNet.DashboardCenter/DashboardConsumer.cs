@@ -19,8 +19,15 @@ public sealed class DashboardConsumer
     private readonly RetryPipeline _retry;
     private readonly DeadLetterStore _deadLetters;
     private readonly HttpLogTailFeeder? _feeder;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _rebuildGate = new(1, 1);
     private readonly TextWriter _output;
+    private readonly int _shardCount;
+    private readonly int _shardCapacity;
+    private readonly TimeSpan _handleDelay;
+    private ShardWorkerPool? _pool;
+    private long _handledCount;
+    private long _attemptCount;
+    private long _deadLetteredCount;
 
     public DashboardConsumer(
         IEventBus eventBus,
@@ -32,7 +39,10 @@ public sealed class DashboardConsumer
         TextWriter? output = null,
         EventUpcasterPipeline? upcasters = null,
         RetryPipeline? retry = null,
-        DeadLetterStore? deadLetters = null)
+        DeadLetterStore? deadLetters = null,
+        int shardCount = PartitionShard.DefaultCount,
+        TimeSpan? handleDelay = null,
+        int shardCapacity = PartitionShard.DefaultCapacity)
     {
         _eventBus = eventBus;
         _db = db;
@@ -44,46 +54,74 @@ public sealed class DashboardConsumer
         _upcasters = upcasters ?? EventUpcasterPipeline.Default;
         _retry = retry ?? new RetryPipeline();
         _deadLetters = deadLetters ?? new DeadLetterStore();
+        _shardCount = shardCount < 1 ? 1 : shardCount;
+        _shardCapacity = shardCapacity < 1 ? PartitionShard.DefaultCapacity : shardCapacity;
+        _handleDelay = handleDelay ?? TimeSpan.Zero;
     }
 
-    public long HandledCount { get; private set; }
+    public long HandledCount => Interlocked.Read(ref _handledCount);
 
-    public long AttemptCount { get; private set; }
+    public long AttemptCount => Interlocked.Read(ref _attemptCount);
 
-    public long DeadLetteredCount { get; private set; }
+    public long DeadLetteredCount => Interlocked.Read(ref _deadLetteredCount);
 
     public ConsumerOffsetStore Offsets => _offsets;
 
+    public ShardMetricsSnapshot? ShardSnapshot => _pool?.Snapshot();
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        await foreach (var envelope in _eventBus.SubscribeAsync(ConsumerGroup, cancellationToken))
-        {
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+        await using var pool = new ShardWorkerPool(
+            _shardCount,
+            (envelope, _) =>
             {
                 Handle(envelope);
-            }
-            finally
+                return Task.CompletedTask;
+            },
+            _shardCapacity);
+        _pool = pool;
+
+        try
+        {
+            await foreach (var envelope in _eventBus.SubscribeAsync(ConsumerGroup, cancellationToken))
             {
-                _gate.Release();
+                await _rebuildGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await pool.DispatchAsync(envelope, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _rebuildGate.Release();
+                }
             }
+        }
+        finally
+        {
+            await pool.DrainAsync(CancellationToken.None).ConfigureAwait(false);
         }
     }
 
     public async Task RebuildAsync(CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _rebuildGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_pool is not null)
+            {
+                await _pool.DrainAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             _db.Write((conn, tx) =>
             {
                 _readModel.Truncate(conn, tx);
                 _inbox.Clear(conn, tx);
                 _offsets.Reset(conn, tx);
             });
-            HandledCount = 0;
-            AttemptCount = 0;
-            DeadLetteredCount = 0;
+            Interlocked.Exchange(ref _handledCount, 0);
+            Interlocked.Exchange(ref _attemptCount, 0);
+            Interlocked.Exchange(ref _deadLetteredCount, 0);
+            _pool?.Metrics.Reset();
 
             if (_feeder is not null)
             {
@@ -94,7 +132,7 @@ public sealed class DashboardConsumer
         }
         finally
         {
-            _gate.Release();
+            _rebuildGate.Release();
         }
     }
 
@@ -106,7 +144,12 @@ public sealed class DashboardConsumer
             return;
         }
 
-        AttemptCount++;
+        Interlocked.Increment(ref _attemptCount);
+        if (_handleDelay > TimeSpan.Zero)
+        {
+            Thread.Sleep(_handleDelay);
+        }
+
         var result = _retry.Execute(() => HandleCore(envelope));
         if (!result.Succeeded)
         {
@@ -166,13 +209,13 @@ public sealed class DashboardConsumer
 
         if (applied)
         {
-            HandledCount++;
+            Interlocked.Increment(ref _handledCount);
         }
     }
 
     private void DeadLetter(EventEnvelope envelope, RetryResult result)
     {
-        DeadLetteredCount++;
+        Interlocked.Increment(ref _deadLetteredCount);
         var error = $"{result.Error!.GetType().Name}: {result.Error.Message}";
         _output.WriteLine(
             $"Dead-letter {envelope.EventId} after {result.Attempts} attempts: {result.Error.Message}");

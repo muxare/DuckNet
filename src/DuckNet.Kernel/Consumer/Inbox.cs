@@ -90,6 +90,16 @@ public sealed class Inbox
         return inserted;
     }
 
+    public void Clear(SqliteConnection connection, SqliteTransaction tx)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "DELETE FROM inbox WHERE consumer_group = $g";
+        cmd.Parameters.AddWithValue("$g", ConsumerGroup);
+        cmd.ExecuteNonQuery();
+        _processed.Clear();
+    }
+
     private bool Contains(SqliteConnection connection, Guid eventId)
     {
         using var cmd = connection.CreateCommand();

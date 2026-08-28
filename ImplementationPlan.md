@@ -401,9 +401,9 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] Delete/truncate read model DB → run rebuild → identical row counts to pre-delete snapshot.
-- [ ] Projector handles duplicate events (inbox or upsert idempotency).
-- [ ] DashboardCenter never writes to Telemetry or Alarm DBs.
+- [x] Delete/truncate read model DB → run rebuild → identical row counts to pre-delete snapshot.
+- [x] Projector handles duplicate events (inbox or upsert idempotency).
+- [x] DashboardCenter never writes to Telemetry or Alarm DBs.
 
 **Tests:**
 
@@ -610,6 +610,8 @@ Consumer: Handler → ConsumerOffsetStore
 ### Step 12 (future) — Host on Azure
 
 **Goal:** Same Center boundaries and event-driven seams as local — swap infrastructure implementations, not Center code. This mirrors the Step 11 punchline at cloud scale.
+
+**Learning notes:** options, 2018–2026 industry path, and lab pricing live in [docs/azure-deployment.md](./docs/azure-deployment.md). That file is not an implementation spec — this section remains the locked Azure target.
 
 **Architecture decisions (locked in for Azure path):**
 

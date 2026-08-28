@@ -22,6 +22,21 @@ public sealed class HttpLogTailFeeder
 
     public long FedOffset => _fedOffset;
 
+    public async Task ResetToAsync(long offset, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _fedOffset = offset;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)

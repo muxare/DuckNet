@@ -1,8 +1,6 @@
-using DuckNet.AlarmCenter;
 using DuckNet.Kernel.Persistence;
-using DuckNet.TelemetryCenter;
 
-namespace DuckNet.AlarmCenter.Tests;
+namespace DuckNet.DashboardCenter.Tests;
 
 public class CenterIsolationTests
 {
@@ -10,23 +8,25 @@ public class CenterIsolationTests
     public void Centers_do_not_reference_each_other()
     {
         var root = RepoRoot();
+        var dashboardCsproj = File.ReadAllText(
+            Path.Combine(root, "src", "DuckNet.DashboardCenter", "DuckNet.DashboardCenter.csproj"));
         var alarmCsproj = File.ReadAllText(
             Path.Combine(root, "src", "DuckNet.AlarmCenter", "DuckNet.AlarmCenter.csproj"));
         var telemetryCsproj = File.ReadAllText(
             Path.Combine(root, "src", "DuckNet.TelemetryCenter", "DuckNet.TelemetryCenter.csproj"));
 
-        Assert.DoesNotContain("DuckNet.TelemetryCenter", alarmCsproj, StringComparison.Ordinal);
-        Assert.DoesNotContain("DuckNet.AlarmCenter", telemetryCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.TelemetryCenter", dashboardCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.AlarmCenter", dashboardCsproj, StringComparison.Ordinal);
         Assert.DoesNotContain("DuckNet.DashboardCenter", alarmCsproj, StringComparison.Ordinal);
         Assert.DoesNotContain("DuckNet.DashboardCenter", telemetryCsproj, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AlarmCenter_source_never_opens_event_log_store()
+    public void DashboardCenter_source_never_opens_other_center_stores()
     {
         var root = RepoRoot();
         var files = Directory.GetFiles(
-            Path.Combine(root, "src", "DuckNet.AlarmCenter"),
+            Path.Combine(root, "src", "DuckNet.DashboardCenter"),
             "*.cs",
             SearchOption.AllDirectories);
 
@@ -35,27 +35,30 @@ public class CenterIsolationTests
             var text = File.ReadAllText(file);
             Assert.DoesNotContain("EventLogStore", text, StringComparison.Ordinal);
             Assert.DoesNotContain("telemetry.db", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("alarm.db", text, StringComparison.Ordinal);
             Assert.DoesNotContain("DuckNet.TelemetryCenter", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("DuckNet.AlarmCenter", text, StringComparison.Ordinal);
         }
     }
 
     [Fact]
-    public void Separate_schemas_do_not_share_tables()
+    public void Dashboard_schema_is_a_read_model_not_a_log()
     {
         using var telemetry = KernelDb.OpenInMemory(CenterSchema.Telemetry);
         using var alarm = KernelDb.OpenInMemory(CenterSchema.Alarm);
+        using var dashboard = KernelDb.OpenInMemory(CenterSchema.Dashboard);
 
-        var telemetryTables = telemetry.TableNames();
-        var alarmTables = alarm.TableNames();
+        var dashboardTables = dashboard.TableNames();
+        Assert.Contains("squeaks_by_duck_hour", dashboardTables);
+        Assert.Contains("inbox", dashboardTables);
+        Assert.Contains("consumer_offsets", dashboardTables);
+        Assert.DoesNotContain("event_log", dashboardTables);
+        Assert.DoesNotContain("outbox", dashboardTables);
+        Assert.DoesNotContain("alarms", dashboardTables);
+        Assert.DoesNotContain("duck_state", dashboardTables);
 
-        Assert.Contains("event_log", telemetryTables);
-        Assert.Contains("duck_state", telemetryTables);
-        Assert.DoesNotContain("alarms", telemetryTables);
-
-        Assert.Contains("alarms", alarmTables);
-        Assert.Contains("squeak_window", alarmTables);
-        Assert.DoesNotContain("event_log", alarmTables);
-        Assert.DoesNotContain("duck_state", alarmTables);
+        Assert.DoesNotContain("squeaks_by_duck_hour", telemetry.TableNames());
+        Assert.DoesNotContain("squeaks_by_duck_hour", alarm.TableNames());
     }
 
     private static string RepoRoot()

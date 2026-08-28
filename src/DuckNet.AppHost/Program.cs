@@ -19,4 +19,10 @@ builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")
     .WithEnvironment("EVENT_LOG_URL", telemetry.GetEndpoint("http"))
     .WaitFor(telemetry);
 
+builder.AddProject<Projects.DuckNet_DashboardCenter>("dashboard")
+    .WithHttpHealthCheck("/health")
+    .WithEnvironment("DUCKNET_DB", Path.Combine(dataDir, "dashboard.db"))
+    .WithEnvironment("EVENT_LOG_URL", telemetry.GetEndpoint("http"))
+    .WaitFor(telemetry);
+
 builder.Build().Run();

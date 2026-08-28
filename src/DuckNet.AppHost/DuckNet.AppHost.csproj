@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DuckNet.AlarmCenter\DuckNet.AlarmCenter.csproj" />
+    <ProjectReference Include="..\DuckNet.DashboardCenter\DuckNet.DashboardCenter.csproj" />
     <ProjectReference Include="..\DuckNet.TelemetryCenter\DuckNet.TelemetryCenter.csproj" />
   </ItemGroup>
 

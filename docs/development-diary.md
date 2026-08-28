@@ -68,7 +68,7 @@ flowchart TD
 - Missing `CLAUDE_CODE_OAUTH_TOKEN`: triage fails (infra); verdict never fails the workflow
 
 ### Follow-ups
-**CCA-F:** coordinator + isolated specialists + structured state (D1/D4). Nightly reuse of `review-state`, code specialist, Docker-off-PR — later.
+**CCA-F:** coordinator + isolated specialists + structured state (D1/D4). Later/parked list: [docs/ci-policy.md](./ci-policy.md).
 
 ## 2026-08-28 — DashboardCenter Vue UI
 

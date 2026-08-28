@@ -17,4 +17,4 @@ Target roadmap (all steps, high-level): [DuckNetArchitectureSteps.html](../../Du
 
 After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md).
 
-Related (not as-built): [Azure deployment — learning notes](../azure-deployment.md) — how this Aspire multi-Center shape maps to Azure, what was standard from 2018 to 2026, and lab pricing. Azure itself is Step 12; `infra/bicep/` is not in the repo yet.
+Related (not as-built): [Azure deployment — learning notes](../azure-deployment.md) — how this Aspire multi-Center shape maps to Azure, what was standard from 2018 to 2026, and lab pricing. Azure itself is Step 12; `infra/bicep/` is not in the repo yet. [CI policy and ReviewFlow backlog](../ci-policy.md) — what runs on PRs vs later/nightly.

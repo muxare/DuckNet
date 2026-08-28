@@ -138,6 +138,7 @@ infra/docker/                 # one image per Center
 
 - [docs/architecture/](./docs/architecture/) — as-built architecture + execution diagrams per completed step
 - [docs/azure-deployment.md](./docs/azure-deployment.md) — learning notes: Azure options, 2018–2026 industry path, lab pricing (not implemented)
+- [docs/ci-policy.md](./docs/ci-policy.md) — required vs advisory checks; ReviewFlow later/parked backlog
 - [ImplementationPlan.md](./ImplementationPlan.md) — step-by-step build plan and acceptance criteria
 - [CLAUDE.md](./CLAUDE.md) — architecture rules for humans and agents
 - [CentersBuildPlan.md](./CentersBuildPlan.md) — why the Centers exist

@@ -810,6 +810,8 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 | `deploy-center.yml` | Scoped automation; human approval gate on prod |
 | PostToolUse hook | Auto `dotnet format` after agent edits locally |
 
+Later / parked ReviewFlow and CI work lives in [docs/ci-policy.md](docs/ci-policy.md) — do not treat it as Step 0 scope.
+
 ### Interview / exam soundbite
 
 *"DuckNet isn't just an event-driven demo — it's my CCA-F study lab: MCP tools for ops, headless Claude triaging every PR then running isolated architecture and security specialists through shared review-state JSON, and Centers orchestrated by events instead of a central conductor."*
@@ -873,12 +875,14 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 
 ### What you defer (not Step 0 work)
 
+See [docs/ci-policy.md](docs/ci-policy.md) for the ReviewFlow later list (nightly, code specialist, cheaper PR CI) and parked platform vision.
+
 | Enhancement | When | Extra effort |
 |-------------|------|--------------|
-| Block merge on `request_changes` | Step 4 | ~30 min — branch protection rule |
-| Center-specific review skills | Step 4 | ~1 hr per skill |
+| Block merge on `request_changes` | Parked — Claude stays advisory | branch protection |
+| Center-specific review skills | After MVP is boring | ~1 hr per skill |
 | MCP-connected review (query test results) | Step 9 | ~2–3 hr |
-| Re-introduce code/bug specialist behind triage | After ReviewFlow MVP is boring | architecture + security already run as isolated jobs |
+| Re-introduce code/bug specialist behind triage | After ReviewFlow MVP is boring | prompt already on disk |
 
 ### Cost & reliability expectations
 

@@ -20,7 +20,7 @@ Single-process kernel console plus the durable primitives library used by Center
 - `EventId` is the idempotency key. Duplicates keep the same id.
 - `SubscribeAsync(consumerGroup, …)` — group is a logical subscriber. Inbox and offsets are keyed by group.
 - Hostile middleware applies **after** log read, never before append.
-- Do not implement later steps early. Dashboard / schema evolution land on Steps 5–6. RabbitMQ is Step 11.
+- Do not implement later steps early. DLQ / hot partitions land on Steps 7–8. RabbitMQ is Step 11.
 
 ## Step 0 map
 
@@ -31,7 +31,7 @@ DuckSimulator → IEventBus (InMemoryEventBus / Channel) → SqueakCounter
 | Piece | Role |
 |-------|------|
 | `EventEnvelope` | Metadata + `PayloadJson` |
-| `SqueakedEnvelope` | Serialize/parse `Squeaked` v1 |
+| `SqueakedEnvelope` | Serialize/parse current `Squeaked` (v2); `CreateV1` for mixed-log tests |
 | `InMemoryEventBus` | Unbounded channel; no hostility yet |
 | `DuckSimulator` | N ducks, per-duck seq, optional seed |
 | `SqueakCounter` | Totals; skip unknown `Type` |

@@ -14,6 +14,7 @@ public sealed class DashboardConsumer
     private readonly Inbox _inbox;
     private readonly ConsumerOffsetStore _offsets;
     private readonly DashboardReadModel _readModel;
+    private readonly EventUpcasterPipeline _upcasters;
     private readonly HttpLogTailFeeder? _feeder;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly TextWriter _output;
@@ -25,7 +26,8 @@ public sealed class DashboardConsumer
         ConsumerOffsetStore offsets,
         DashboardReadModel readModel,
         HttpLogTailFeeder? feeder = null,
-        TextWriter? output = null)
+        TextWriter? output = null,
+        EventUpcasterPipeline? upcasters = null)
     {
         _eventBus = eventBus;
         _db = db;
@@ -34,6 +36,7 @@ public sealed class DashboardConsumer
         _readModel = readModel;
         _feeder = feeder;
         _output = output ?? Console.Out;
+        _upcasters = upcasters ?? EventUpcasterPipeline.Default;
     }
 
     public long HandledCount { get; private set; }
@@ -94,7 +97,8 @@ public sealed class DashboardConsumer
         }
 
         AttemptCount++;
-        var squeaked = SqueakedEnvelope.Parse(envelope);
+        var current = _upcasters.Upcast(envelope);
+        var squeaked = SqueakedEnvelope.Parse(current);
         var applied = _db.Write((conn, tx) =>
         {
             if (envelope.LogOffset > 0)
@@ -107,7 +111,7 @@ public sealed class DashboardConsumer
                 return false;
             }
 
-            _readModel.ApplySqueak(conn, tx, squeaked.DuckId, squeaked.OccurredAt);
+            _readModel.ApplySqueak(conn, tx, squeaked.DuckId, squeaked.OccurredAt, squeaked.VolumeDb);
             return true;
         });
 

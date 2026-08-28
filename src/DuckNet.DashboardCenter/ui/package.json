@@ -1,0 +1,22 @@
+{
+  "name": "ducknet-dashboard-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tanstack/vue-query": "^5.90.2",
+    "@tanstack/vue-table": "^8.21.3",
+    "bootstrap": "^5.3.7",
+    "bootstrap-icons": "^1.13.1",
+    "vue": "^3.5.18"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

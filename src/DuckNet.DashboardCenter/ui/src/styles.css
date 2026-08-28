@@ -1,0 +1,68 @@
+:root {
+  --dn-duck: #e6b422;
+  --dn-ink: #1b2430;
+  --dn-page: #f4f1ea;
+}
+
+body {
+  background: var(--dn-page);
+  min-height: 100vh;
+}
+
+.navbar-duck {
+  background: var(--dn-ink);
+}
+
+.navbar-duck .navbar-brand {
+  color: var(--dn-duck) !important;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.stat-card {
+  border: 0;
+  border-top: 3px solid var(--dn-duck);
+  box-shadow: 0 0.35rem 0.9rem rgba(27, 36, 48, 0.08);
+}
+
+.stat-card .stat-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--dn-ink);
+}
+
+.table-duck thead th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  background: var(--dn-ink);
+  color: #fff;
+}
+
+.table-duck thead th:hover {
+  color: var(--dn-duck);
+}
+
+.live-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #3ddc97;
+  box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.7);
+  animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+  70% {
+    box-shadow: 0 0 0 0.45rem rgba(61, 220, 151, 0);
+  }
+}
+
+.volume-bar {
+  height: 0.4rem;
+  background: #e9ecef;
+}
+
+.volume-bar .progress-bar {
+  background: var(--dn-duck);
+}

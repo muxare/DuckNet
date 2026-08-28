@@ -35,20 +35,20 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 5)
+## Layout (Step 6)
 
 ```
 src/DuckNet.AppHost/          # Aspire: telemetry + alarm + dashboard
-src/DuckNet.Contracts/        # EventEnvelope, Squeaked, AlarmRaised
-src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient
+src/DuckNet.Contracts/        # EventEnvelope, Squeaked v1/v2, AlarmRaised
+src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient, upcasters
 src/DuckNet.Kernel/           # primitives + Step 3 console
   Transport/                  # LogTailFeeder (SQLite)
   Consumer/                   # Inbox + PerKeySequencer + checkpoint
   Producer/                   # DuckSimulator, TransactionalPublisher, OutboxDispatcher
   Persistence/                # KernelDb + per-Center schema
 src/DuckNet.TelemetryCenter/  # owns event_log writes; GET/POST /bus/events
-src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox
-src/DuckNet.DashboardCenter/  # own DB; squeaks_by_duck_hour; POST /dashboard/rebuild
+src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox; upcast Squeaked
+src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db
 tests/                        # kernel + AlarmCenter + DashboardCenter
 infra/docker/                 # one Dockerfile per Center
 .github/workflows/            # ci.yml, claude-review.yml, deploy-center.yml
@@ -109,7 +109,7 @@ DuckNet is a CCA-F study lab. While working, **spot and propose** reusable agent
 
 When you find one, propose the path, frontmatter (`description`, `allowed-tools`, `argument-hint`, `context: fork` if needed), and why. Wait for approval.
 
-Live: skills `ducknet-kernel` and `ducknet-center`, commands `/run-demo`, `/mis-demo`, `/run-aspire`, PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-event-contract` (Step 6), `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
+Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; commands `/run-demo`, `/mis-demo`, `/run-aspire`; PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
 
 ## Step progress
 
@@ -120,6 +120,7 @@ Live: skills `ducknet-kernel` and `ducknet-center`, commands `/run-demo`, `/mis-
 | 2 | complete | `step-2` → `main` |
 | 3 | complete | `step-3` → `main` |
 | 4 | complete | `step-4` → `main` |
-| 5 | in progress | `step-5` |
+| 5 | complete | `step-5` → `main` |
+| 6 | in progress | `step-6` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

@@ -12,6 +12,7 @@ Target roadmap (all steps, high-level): [DuckNetArchitectureSteps.html](../../Du
 | 3 | [step-3.md](./step-3.md) | Durable log + outbox → kill/restart, no double-count |
 | 4 | [step-4.md](./step-4.md) | Second Center, own DB; catch-up from the log |
 | 5 | [step-5.md](./step-5.md) | Disposable read model; delete + rebuild from the log |
+| 6 | [step-6.md](./step-6.md) | Mixed v1/v2 log; upcast at the consumer, not in the bus |
 
 After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md).
 

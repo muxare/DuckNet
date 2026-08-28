@@ -11,6 +11,7 @@ public sealed class SqueakCounter
     private readonly Inbox _inbox;
     private readonly PerKeySequencer? _sequencer;
     private readonly ConsumerCheckpoint? _checkpoint;
+    private readonly EventUpcasterPipeline _upcasters;
     private readonly TimeSpan _gapTimeout;
     private readonly int _logEvery;
     private readonly bool _logDuplicates;
@@ -29,13 +30,15 @@ public sealed class SqueakCounter
         bool sequencerEnabled = true,
         TimeSpan? gapTimeout = null,
         ConsumerCheckpoint? checkpoint = null,
-        IReadOnlyDictionary<string, DuckCount>? restoredCounts = null)
+        IReadOnlyDictionary<string, DuckCount>? restoredCounts = null,
+        EventUpcasterPipeline? upcasters = null)
     {
         _eventBus = eventBus;
         _consumerGroup = consumerGroup;
         _inbox = inbox ?? new Inbox(consumerGroup);
         _sequencer = sequencerEnabled ? sequencer ?? new PerKeySequencer() : null;
         _checkpoint = checkpoint;
+        _upcasters = upcasters ?? EventUpcasterPipeline.Default;
         _gapTimeout = gapTimeout ?? TimeSpan.FromSeconds(5);
         _logEvery = logEvery;
         _logDuplicates = logDuplicates;
@@ -104,7 +107,7 @@ public sealed class SqueakCounter
 
     private void HandleReady(EventEnvelope envelope)
     {
-        var squeaked = SqueakedEnvelope.Parse(envelope);
+        var squeaked = SqueakedEnvelope.Parse(_upcasters.Upcast(envelope));
 
         if (_checkpoint is not null)
         {

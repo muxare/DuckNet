@@ -59,6 +59,7 @@ public static class TelemetryApp
         }
 
         var app = builder.Build();
+        app.MapGet("/", () => Results.Redirect("/stats"));
         app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "telemetry" }));
         app.MapGet("/bus/events", (long after, int? limit, KernelDb kernelDb, EventLogStore eventLog) =>
         {
@@ -77,7 +78,7 @@ public static class TelemetryApp
                 return Results.BadRequest();
             }
 
-            await pub.PublishSqueakAsync(request.DuckId, ct);
+            await pub.PublishSqueakAsync(request.DuckId, request.VolumeDb ?? 60, ct);
             return Results.Accepted();
         });
         app.MapGet("/stats", (KernelDb kernelDb, EventLogStore eventLog) =>
@@ -91,7 +92,7 @@ public static class TelemetryApp
     }
 }
 
-public sealed record IngestSqueakRequest(string DuckId);
+public sealed record IngestSqueakRequest(string DuckId, double? VolumeDb = null);
 
 public sealed record TelemetryOptions(
     string DatabasePath,

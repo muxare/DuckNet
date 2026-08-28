@@ -82,6 +82,7 @@ public static class AlarmApp
         builder.Services.AddHostedService<RemoteOutboxDispatcherHostedService>();
 
         var app = builder.Build();
+        app.MapGet("/", () => Results.Redirect("/alarms"));
         app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "alarm" }));
         app.MapGet("/alarms", (KernelDb kernelDb, AlarmStore store) =>
         {

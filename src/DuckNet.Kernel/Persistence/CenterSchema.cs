@@ -121,6 +121,7 @@ public static class CenterSchema
           duck_id TEXT NOT NULL,
           hour_utc TEXT NOT NULL,
           count INTEGER NOT NULL,
+          volume_db REAL,
           PRIMARY KEY (duck_id, hour_utc)
         );
         """;

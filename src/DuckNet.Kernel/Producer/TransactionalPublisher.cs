@@ -22,7 +22,10 @@ public sealed class TransactionalPublisher
         _outbox = outbox;
     }
 
-    public Task PublishSqueakAsync(string duckId, CancellationToken cancellationToken = default)
+    public Task PublishSqueakAsync(string duckId, CancellationToken cancellationToken = default) =>
+        PublishSqueakAsync(duckId, volumeDb: 60, cancellationToken);
+
+    public Task PublishSqueakAsync(string duckId, double volumeDb, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(duckId);
@@ -30,8 +33,8 @@ public sealed class TransactionalPublisher
         _db.Write((conn, tx) =>
         {
             var sequence = _state.NextSequence(conn, tx, duckId);
-            var squeaked = new Squeaked(duckId, sequence, DateTimeOffset.UtcNow);
-            // PartitionKey = duck id. Sequence is per duck, never global.
+            var squeaked = new Squeaked(duckId, sequence, DateTimeOffset.UtcNow, volumeDb);
+            // PartitionKey = duck id. Sequence is per duck, never global. Envelope version is v2.
             _outbox.Insert(conn, tx, SqueakedEnvelope.Create(squeaked));
         });
 

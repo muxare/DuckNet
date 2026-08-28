@@ -15,6 +15,7 @@ public sealed class AlarmConsumer
     private readonly ConsumerOffsetStore _offsets;
     private readonly PerKeySequencer? _sequencer;
     private readonly AlarmStore _alarms;
+    private readonly EventUpcasterPipeline _upcasters;
     private readonly TextWriter _output;
     private readonly TimeSpan _gapTimeout;
 
@@ -26,7 +27,8 @@ public sealed class AlarmConsumer
         AlarmStore alarms,
         PerKeySequencer? sequencer,
         TextWriter? output = null,
-        TimeSpan? gapTimeout = null)
+        TimeSpan? gapTimeout = null,
+        EventUpcasterPipeline? upcasters = null)
     {
         _eventBus = eventBus;
         _db = db;
@@ -36,6 +38,7 @@ public sealed class AlarmConsumer
         _sequencer = sequencer;
         _output = output ?? Console.Out;
         _gapTimeout = gapTimeout ?? TimeSpan.FromSeconds(5);
+        _upcasters = upcasters ?? EventUpcasterPipeline.Default;
     }
 
     public long HandledCount { get; private set; }
@@ -78,7 +81,8 @@ public sealed class AlarmConsumer
 
     private void HandleReady(EventEnvelope envelope)
     {
-        var squeaked = SqueakedEnvelope.Parse(envelope);
+        var current = _upcasters.Upcast(envelope);
+        var squeaked = SqueakedEnvelope.Parse(current);
         var (applied, raised) = _db.Write((conn, tx) =>
         {
             if (envelope.LogOffset > 0)

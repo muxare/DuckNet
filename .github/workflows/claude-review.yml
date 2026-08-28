@@ -55,7 +55,7 @@ jobs:
             empty_message: "No code-review findings in this diff."
             model: sonnet
             tools: "Read"
-            max_turns: "3"
+            max_turns: "5"
             max_budget_usd: "0.50"
     steps:
       - uses: actions/checkout@v4

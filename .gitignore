@@ -9,3 +9,5 @@
 *.db-wal
 *.db-shm
 *.sqlite
+**/node_modules/
+src/DuckNet.DashboardCenter/wwwroot/

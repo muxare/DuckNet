@@ -440,8 +440,8 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] Mixed log replays cleanly in Alarm + Dashboard without code changes in handlers.
-- [ ] Upcaster unit tests for v1→v2 defaults.
+- [x] Mixed log replays cleanly in Alarm + Dashboard without code changes in handlers.
+- [x] Upcaster unit tests for v1→v2 defaults.
 
 **Estimated effort:** ~1 evening.
 

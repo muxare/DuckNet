@@ -35,7 +35,7 @@ public sealed class DuckSimulator
         while (DateTimeOffset.UtcNow < endAt && !cancellationToken.IsCancellationRequested)
         {
             var duckId = $"duck-{_random.Next(1, _duckCount + 1)}";
-            await _publisher.PublishSqueakAsync(duckId, cancellationToken);
+            await _publisher.PublishSqueakAsync(duckId, NextVolumeDb(), cancellationToken);
             PublishedCount++;
             await Task.Delay(_random.Next(_minDelayMs, _maxDelayMs + 1), cancellationToken);
         }
@@ -45,7 +45,9 @@ public sealed class DuckSimulator
 
     public async Task PublishOneAsync(string duckId, CancellationToken cancellationToken = default)
     {
-        await _publisher.PublishSqueakAsync(duckId, cancellationToken);
+        await _publisher.PublishSqueakAsync(duckId, NextVolumeDb(), cancellationToken);
         PublishedCount++;
     }
+
+    private double NextVolumeDb() => 50 + (_random.NextDouble() * 40);
 }

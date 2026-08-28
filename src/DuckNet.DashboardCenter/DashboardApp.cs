@@ -12,7 +12,14 @@ public static class DashboardApp
         var opts = options ?? DashboardOptions.FromConfiguration(args);
         ArgumentException.ThrowIfNullOrWhiteSpace(opts.EventLogUrl);
 
-        var builder = WebApplication.CreateBuilder(args);
+        var wwwroot = FindWwwRoot();
+        var builder = wwwroot is null
+            ? WebApplication.CreateBuilder(args)
+            : WebApplication.CreateBuilder(new WebApplicationOptions
+            {
+                Args = args,
+                WebRootPath = wwwroot,
+            });
         if (!string.IsNullOrWhiteSpace(opts.Urls))
         {
             builder.WebHost.UseUrls(opts.Urls);
@@ -30,6 +37,7 @@ public static class DashboardApp
         }
 
         var db = KernelDb.Open(opts.DatabasePath, CenterSchema.Dashboard);
+        db.Write((conn, tx) => DashboardReadModel.EnsureVolumeColumn(conn, tx));
         var inbox = new Inbox(DashboardConsumer.ConsumerGroup, enabled: true, db);
         var offsets = new ConsumerOffsetStore(db, DashboardConsumer.ConsumerGroup);
         var readModel = new DashboardReadModel();
@@ -72,12 +80,18 @@ public static class DashboardApp
         builder.Services.AddHostedService<DashboardConsumerHostedService>();
 
         var app = builder.Build();
+        if (wwwroot is not null)
+        {
+            app.UseDefaultFiles();
+            app.UseStaticFiles();
+        }
         app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "dashboard" }));
         app.MapGet("/dashboard/summary", (KernelDb kernelDb, DashboardReadModel model) =>
         {
             var rows = kernelDb.Read(conn => model.List(conn));
             var total = kernelDb.Read(conn => model.TotalCount(conn));
-            return Results.Json(new DashboardSummary(rows, total, rows.Count));
+            var volume = kernelDb.Read(conn => model.TotalVolumeDb(conn));
+            return Results.Json(new DashboardSummary(rows, total, rows.Count, volume));
         });
         app.MapGet("/dashboard/duck/{id}", (string id, KernelDb kernelDb, DashboardReadModel model) =>
         {
@@ -92,10 +106,12 @@ public static class DashboardApp
         app.MapGet("/stats", (KernelDb kernelDb, DashboardReadModel model, ConsumerOffsetStore offsetStore) =>
         {
             var total = kernelDb.Read(conn => model.TotalCount(conn));
+            var volume = kernelDb.Read(conn => model.TotalVolumeDb(conn));
             var rows = kernelDb.Read(conn => model.List(conn));
             return Results.Json(new
             {
                 totalSqueaks = total,
+                totalVolumeDb = volume,
                 rowCount = rows.Count,
                 lastOffset = offsetStore.LastOffset,
                 database = kernelDb.DataSource
@@ -105,6 +121,29 @@ public static class DashboardApp
         return app;
     }
 
+    private static string? FindWwwRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var nested = Path.Combine(dir.FullName, "src", "DuckNet.DashboardCenter", "wwwroot");
+            if (File.Exists(Path.Combine(nested, "index.html")))
+            {
+                return nested;
+            }
+
+            var local = Path.Combine(dir.FullName, "wwwroot");
+            if (File.Exists(Path.Combine(local, "index.html")))
+            {
+                return local;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return null;
+    }
+
     private static string EnsureTrailingSlash(string url) =>
         url.EndsWith('/') ? url : url + "/";
 }
@@ -112,7 +151,8 @@ public static class DashboardApp
 public sealed record DashboardSummary(
     IReadOnlyList<SqueakHourRow> Rows,
     long TotalSqueaks,
-    int RowCount);
+    int RowCount,
+    double TotalVolumeDb);
 
 public sealed record DashboardOptions(
     string DatabasePath,

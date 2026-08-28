@@ -12,23 +12,43 @@ public sealed class DashboardReadModel
         return hour.ToString("yyyy-MM-ddTHH:00:00Z", CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// Step 5 DBs have no volume_db. Add it nullable; new CREATE TABLE already includes it.
+    /// </summary>
+    public static void EnsureVolumeColumn(SqliteConnection connection, SqliteTransaction tx)
+    {
+        if (HasColumn(connection, tx, "squeaks_by_duck_hour", "volume_db"))
+        {
+            return;
+        }
+
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "ALTER TABLE squeaks_by_duck_hour ADD COLUMN volume_db REAL";
+        cmd.ExecuteNonQuery();
+    }
+
     public void ApplySqueak(
         SqliteConnection connection,
         SqliteTransaction tx,
         string duckId,
-        DateTimeOffset occurredAt)
+        DateTimeOffset occurredAt,
+        double volumeDb = 0)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(duckId);
 
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = """
-            INSERT INTO squeaks_by_duck_hour (duck_id, hour_utc, count)
-            VALUES ($d, $h, 1)
-            ON CONFLICT(duck_id, hour_utc) DO UPDATE SET count = count + 1
+            INSERT INTO squeaks_by_duck_hour (duck_id, hour_utc, count, volume_db)
+            VALUES ($d, $h, 1, $v)
+            ON CONFLICT(duck_id, hour_utc) DO UPDATE SET
+              count = count + 1,
+              volume_db = COALESCE(volume_db, 0) + $v
             """;
         cmd.Parameters.AddWithValue("$d", duckId);
         cmd.Parameters.AddWithValue("$h", HourUtc(occurredAt));
+        cmd.Parameters.AddWithValue("$v", volumeDb);
         cmd.ExecuteNonQuery();
     }
 
@@ -45,12 +65,12 @@ public sealed class DashboardReadModel
         using var cmd = connection.CreateCommand();
         cmd.CommandText = duckId is null
             ? """
-              SELECT duck_id, hour_utc, count
+              SELECT duck_id, hour_utc, count, COALESCE(volume_db, 0)
               FROM squeaks_by_duck_hour
               ORDER BY duck_id, hour_utc
               """
             : """
-              SELECT duck_id, hour_utc, count
+              SELECT duck_id, hour_utc, count, COALESCE(volume_db, 0)
               FROM squeaks_by_duck_hour
               WHERE duck_id = $d
               ORDER BY hour_utc
@@ -67,7 +87,8 @@ public sealed class DashboardReadModel
             rows.Add(new SqueakHourRow(
                 reader.GetString(0),
                 reader.GetString(1),
-                reader.GetInt64(2)));
+                reader.GetInt64(2),
+                reader.GetDouble(3)));
         }
 
         return rows;
@@ -79,6 +100,34 @@ public sealed class DashboardReadModel
         cmd.CommandText = "SELECT COALESCE(SUM(count), 0) FROM squeaks_by_duck_hour";
         return (long)cmd.ExecuteScalar()!;
     }
+
+    public double TotalVolumeDb(SqliteConnection connection)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COALESCE(SUM(volume_db), 0) FROM squeaks_by_duck_hour";
+        return Convert.ToDouble(cmd.ExecuteScalar()!, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static bool HasColumn(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string table,
+        string column)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"PRAGMA table_info({table})";
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
-public sealed record SqueakHourRow(string DuckId, string HourUtc, long Count);
+public sealed record SqueakHourRow(string DuckId, string HourUtc, long Count, double VolumeDb);

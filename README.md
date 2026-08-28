@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 5 — CQRS disposable read model**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 6 — schema evolution across a boundary**.
 
 ## Rules
 
@@ -15,6 +15,7 @@ Each step adds one distributed-systems idea and stays runnable end-to-end. Curre
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [Node.js 22](https://nodejs.org/) — DashboardCenter Vue UI (`npm ci` runs on `dotnet build`)
 
 ## Build & test
 
@@ -25,15 +26,17 @@ dotnet test
 
 ## Demos
 
-### Step 5 — three Centers, disposable dashboard (Aspire)
+### Step 6 — mixed v1/v2 log, upcast at each Center (Aspire)
 
-TelemetryCenter publishes `Squeaked` into its log. AlarmCenter raises `AlarmRaised` from a rate window. DashboardCenter projects `squeaks_by_duck_hour` and can be deleted and rebuilt from the log.
+TelemetryCenter emits `Squeaked` v2 (`volumeDb`). AlarmCenter and DashboardCenter upcast leftover v1 rows before the handler. Handlers parse v2 only. Dashboard stores `volume_db` on the hour bucket. Delete the dashboard, rebuild — mixed log still projects.
 
 ```bash
 dotnet run --project src/DuckNet.AppHost
 ```
 
-Aspire dashboard: `telemetry`, `alarm`, and `dashboard` healthy. `GET /dashboard/summary` on DashboardCenter. `POST /dashboard/rebuild` truncates the read model and replays from offset 0 — same rows.
+Aspire dashboard: `telemetry`, `alarm`, and `dashboard` healthy. Click the **dashboard** URL for the Vue UI (hour buckets, volume, rebuild). JSON remains at `/dashboard/summary`. Live traffic is v2. Mixed v1/v2 is the test fixture (`dotnet test --filter MixedVersion`).
+
+`GET /dashboard/summary` includes `totalVolumeDb`. `POST /dashboard/rebuild` still truncates and replays from offset 0.
 
 Stop `alarm`, wait for a burst, start it again — `GET /alarms` still fills in from the log (Step 4).
 
@@ -64,18 +67,18 @@ Agent shortcuts: `/run-demo`, `/mis-demo`.
 
 **What to look for (kernel):** with defenses on, `Published (session) == Counted (lifetime)` on a fresh DB, `Log rows == Counted`, and `Out of order == 0`.
 
-**What to look for (Aspire):** DashboardCenter `/stats` `database` is `dashboard.db`, never `telemetry.db`. After rebuild, `/dashboard/summary` totals match the pre-rebuild snapshot. AlarmCenter `/alarms` still lists threshold crossings.
+**What to look for (Aspire):** Click DashboardCenter — Vue table of `squeaks_by_duck_hour` with live totals. `/stats` `database` is `dashboard.db`, never `telemetry.db`. Rebuild from the UI (or `POST /dashboard/rebuild`) refills the same rows. New squeaks show `Version: 2` and a `volumeDb`. AlarmCenter `/alarms` still lists threshold crossings.
 
 ## Layout
 
 ```
 src/DuckNet.AppHost/          # Aspire orchestration
-src/DuckNet.Contracts/        # event records only
-src/DuckNet.EventBus/         # IEventBus + HTTP log adapter
+src/DuckNet.Contracts/        # event records + versions only
+src/DuckNet.EventBus/         # IEventBus + HTTP log adapter + upcasters
 src/DuckNet.Kernel/           # durable primitives + Step 3 console
 src/DuckNet.TelemetryCenter/  # owns event_log
 src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised
-src/DuckNet.DashboardCenter/  # disposable read model + rebuild
+src/DuckNet.DashboardCenter/  # disposable read model + Vue UI + rebuild
 tests/
 infra/docker/                 # one image per Center
 ```
@@ -96,8 +99,9 @@ infra/docker/                 # one image per Center
 | 2 | complete | Shuffle + per-key sequencer → order and counts still match |
 | 3 | complete | Durable log + outbox → kill/restart, no double-count |
 | 4 | complete | Two Centers, two DBs; Alarm catches up from the log |
-| 5 | in progress | Delete the dashboard, rebuild from the log |
-| 6+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 5 | complete | Delete the dashboard, rebuild from the log |
+| 6 | in progress | Mixed v1/v2 log; upcast at the consumer, not in the bus |
+| 7+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

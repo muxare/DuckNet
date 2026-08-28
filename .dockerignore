@@ -6,3 +6,5 @@
 .git
 .vs
 **/data/
+**/node_modules/
+src/DuckNet.DashboardCenter/wwwroot/

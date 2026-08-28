@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <DashboardUiDir>$(MSBuildProjectDirectory)\ui</DashboardUiDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,5 +12,14 @@
     <ProjectReference Include="..\DuckNet.EventBus\DuckNet.EventBus.csproj" />
     <ProjectReference Include="..\DuckNet.Kernel\DuckNet.Kernel.csproj" />
   </ItemGroup>
+
+  <Target Name="BuildDashboardUi" BeforeTargets="BeforeBuild"
+          Condition="'$(DesignTimeBuild)' != 'true' AND '$(SkipDashboardUi)' != 'true'">
+    <Exec Command="npm ci" WorkingDirectory="$(DashboardUiDir)"
+          Condition="Exists('$(DashboardUiDir)\package-lock.json')" />
+    <Exec Command="npm install" WorkingDirectory="$(DashboardUiDir)"
+          Condition="!Exists('$(DashboardUiDir)\package-lock.json')" />
+    <Exec Command="npm run build" WorkingDirectory="$(DashboardUiDir)" />
+  </Target>
 
 </Project>

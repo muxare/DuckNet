@@ -2,6 +2,62 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-28 — DashboardCenter Vue UI
+
+### What changed
+DashboardCenter `/` is a Vue 3 + Bootstrap 5 SPA. TanStack Query polls `/dashboard/summary` and `/stats`; TanStack Table sorts/filters hour buckets. Rebuild is a modal → `POST /dashboard/rebuild`. JSON APIs unchanged. UI lives in the same Center (no extra process, no Center-to-Center calls). `dotnet build` runs `npm ci && npm run build` into `wwwroot`.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Browser[Vue SPA] -->|same origin| API["/dashboard/summary /stats /rebuild"]
+  API --> RM[("squeaks_by_duck_hour")]
+  Log[("event_log")] -->|IEventBus| Proj[DashboardConsumer]
+  Proj --> RM
+```
+
+### How to test
+- `dotnet test` — JSON `/dashboard/summary` still 200
+- `dotnet run --project src/DuckNet.AppHost` — click dashboard URL; table fills; Rebuild replays
+- UI only: `cd src/DuckNet.DashboardCenter/ui && npm run dev` (proxies to `:5152`)
+
+## 2026-08-28 — Step 6: schema evolution across a boundary
+
+### What changed
+Telemetry emits `Squeaked` v2 (`volumeDb`). `SqueakedV1` stays as the frozen wire shape. Each consumer runs `EventUpcasterPipeline` before parse; handlers never see v1. v1→v2 default is `VolumeDb = 0` (unknown). Dashboard `volume_db` is the hour sum; Step 5 SQLite files get a nullable column via `EnsureVolumeColumn`. Mixed v1/v2 logs are a test fixture, not a live flag.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Tel[TelemetryCenter] -->|v2 + volumeDb| Log[("event_log mixed v1+v2")]
+  Log --> U1[Upcaster]
+  Log --> U2[Upcaster]
+  U1 --> Alm[Alarm handler v2 only]
+  U2 --> Dash[Dashboard projector]
+  Dash --> RM[("squeaks_by_duck_hour + volume_db")]
+```
+
+```mermaid
+sequenceDiagram
+  participant Log as event_log
+  participant Up as SqueakedV1ToV2Upcaster
+  participant H as Handler
+  Log->>Up: Squeaked v1
+  Up->>Up: VolumeDb=0, Version=2
+  Note over Up: EventId unchanged
+  Up->>H: Parse v2
+```
+
+### How to test
+- `dotnet test` — upcaster defaults; Parse rejects v1; mixed log replay in Alarm + Dashboard; dashboard rebuild keeps volume sum
+- `dotnet run --project src/DuckNet.AppHost` — live traffic is v2; `/dashboard/summary` has `totalVolumeDb`
+- Filter: `dotnet test --filter "FullyQualifiedName~Upcaster|FullyQualifiedName~MixedVersion"`
+
+### Follow-ups
+**Vs the plan:** upcasters live in `DuckNet.EventBus`, not Contracts (immutable shapes only). Kernel `SqueakCounter` also upcasts so the Step 3 console can replay mixed logs. `volume_db` is a **sum**, not an average.
+
+**CCA-F:** skill `ducknet-event-contract` is live (version + upcaster checklist). `deploy-center.yml` already fans out on Contracts/EventBus — that is the Step 6 contract-change deploy-all path.
+
 ## 2026-08-28 — Azure deployment learning notes
 
 ### What changed

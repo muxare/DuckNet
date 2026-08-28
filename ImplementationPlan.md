@@ -611,6 +611,8 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Goal:** Same Center boundaries and event-driven seams as local — swap infrastructure implementations, not Center code. This mirrors the Step 11 punchline at cloud scale.
 
+**Learning notes:** options, 2018–2026 industry path, and lab pricing live in [docs/azure-deployment.md](./docs/azure-deployment.md). That file is not an implementation spec — this section remains the locked Azure target.
+
 **Architecture decisions (locked in for Azure path):**
 
 | Local (Steps 3–11) | Azure target | What changes |

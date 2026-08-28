@@ -2,6 +2,14 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-28 — Azure deployment learning notes
+
+### What changed
+Added [docs/azure-deployment.md](./azure-deployment.md): how the current Aspire multi-Center shape maps to Azure without splitting Centers, 2018–2026 industry path (App Service/Fabric → AKS → Container Apps → Aspire), Options A/B/C, and lab price ranges. Linked from README, architecture index, and ImplementationPlan Step 12. No Azure resources or Bicep — learning only.
+
+### How to test
+Open `docs/azure-deployment.md` and confirm the four Mermaid diagrams render. Follow the README Docs link.
+
 ## 2026-08-27 — Cheaper Claude PR reviews
 
 ### What changed

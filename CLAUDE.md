@@ -35,7 +35,7 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 7)
+## Layout (Step 8)
 
 ```
 src/DuckNet.AppHost/          # Aspire: telemetry + alarm + dashboard
@@ -43,12 +43,12 @@ src/DuckNet.Contracts/        # EventEnvelope, Squeaked v1/v2, AlarmRaised
 src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient, upcasters
 src/DuckNet.Kernel/           # primitives + Step 3 console
   Transport/                  # LogTailFeeder (SQLite)
-  Consumer/                   # Inbox + PerKeySequencer + checkpoint + RetryPipeline
-  Producer/                   # DuckSimulator, TransactionalPublisher, OutboxDispatcher
+  Consumer/                   # Inbox + PerKeySequencer + checkpoint + RetryPipeline + ShardWorkerPool
+  Producer/                   # DuckSimulator (LoudDuck), TransactionalPublisher, OutboxDispatcher
   Persistence/                # KernelDb + per-Center schema + dead_letter_queue
-src/DuckNet.TelemetryCenter/  # owns event_log writes; GET/POST /bus/events; POST /bus/poison
-src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox; upcast Squeaked; DLQ
-src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db; DLQ
+src/DuckNet.TelemetryCenter/  # owns event_log writes; GET/POST /bus/events; POST /bus/poison; LoudDuck
+src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox; upcast Squeaked; DLQ; shards
+src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db; DLQ; GET /metrics
 tests/                        # kernel + AlarmCenter + DashboardCenter
 infra/docker/                 # one Dockerfile per Center
 .github/workflows/            # ci.yml, claude-review.yml, deploy-center.yml
@@ -128,6 +128,7 @@ Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; c
 | 4 | complete | `step-4` → `main` |
 | 5 | complete | `step-5` → `main` |
 | 6 | complete | `step-6` → `main` |
-| 7 | in progress | `step-7` |
+| 7 | complete | `step-7` → `main` |
+| 8 | in progress | `step-8` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

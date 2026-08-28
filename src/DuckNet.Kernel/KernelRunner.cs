@@ -25,6 +25,11 @@ public static class KernelRunner
         bool resetDatabase = false,
         bool injectPoison = false,
         TimeSpan? retryBaseDelay = null,
+        int shardCount = PartitionShard.DefaultCount,
+        TimeSpan? handleDelay = null,
+        string? loudDuckId = null,
+        int minDelayMs = 10,
+        int maxDelayMs = 80,
         CancellationToken cancellationToken = default)
     {
         var path = databasePath ?? Path.Combine(Path.GetTempPath(), $"ducknet-{Guid.NewGuid():N}.db");
@@ -39,7 +44,13 @@ public static class KernelRunner
         var log = new EventLogStore();
         var counts = new SqueakCountStore();
         var publisher = new TransactionalPublisher(db, state, outbox);
-        var simulator = new DuckSimulator(publisher, duckCount, seed);
+        var simulator = new DuckSimulator(
+            publisher,
+            duckCount,
+            seed,
+            minDelayMs,
+            maxDelayMs,
+            loudDuckId);
 
         var inner = new InMemoryEventBus();
         var shuffler = new ShufflerMiddleware(inner, shuffleWindow, seed, shuffleEnabled);
@@ -73,7 +84,9 @@ public static class KernelRunner
             restoredCounts: restored,
             retry: retry,
             deadLetters: deadLetters,
-            db: db);
+            db: db,
+            shardCount: shardCount,
+            handleDelay: handleDelay);
 
         var dispatcher = new OutboxDispatcher(db, outbox, log);
         var feeder = new LogTailFeeder(db, log, eventBus, startOffset: offsets.LastOffset);
@@ -95,20 +108,26 @@ public static class KernelRunner
         await shuffler.FlushAsync();
 
         var expectedAttempts = simulator.PublishedCount + eventBus.DuplicateCount + (injectPoison ? 1 : 0);
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2);
-        while (counter.AttemptCount < expectedAttempts && DateTimeOffset.UtcNow < deadline)
+        var drainBudget = TimeSpan.FromSeconds(5);
+        if (handleDelay is { } delay && delay > TimeSpan.Zero)
         {
+            drainBudget += TimeSpan.FromMilliseconds(delay.TotalMilliseconds * Math.Max(expectedAttempts, 1));
+        }
+
+        var deadline = DateTimeOffset.UtcNow + drainBudget;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await counter.DrainAsync(cancellationToken);
+            if (counter.AttemptCount >= expectedAttempts
+                && (!injectPoison || counter.DeadLetteredCount >= 1))
+            {
+                break;
+            }
+
             await Task.Delay(10, cancellationToken);
         }
 
-        if (injectPoison)
-        {
-            while (counter.DeadLetteredCount < 1 && DateTimeOffset.UtcNow < deadline)
-            {
-                await Task.Delay(10, cancellationToken);
-            }
-        }
-
+        var shards = counter.ShardSnapshot;
         linked.Cancel();
         await IgnoreCancel(dispatcherTask);
         await IgnoreCancel(feederTask);
@@ -127,7 +146,8 @@ public static class KernelRunner
             logCount,
             offsets.LastOffset,
             path,
-            dlqCount);
+            dlqCount,
+            shards);
     }
 
     public static void DeleteSqliteFiles(string path)
@@ -166,4 +186,5 @@ public sealed record RunResult(
     long LogCount,
     long LastOffset,
     string DatabasePath,
-    long DeadLetteredCount = 0);
+    long DeadLetteredCount = 0,
+    ShardMetricsSnapshot? Shards = null);

@@ -7,8 +7,9 @@ var telemetry = builder.AddProject<Projects.DuckNet_TelemetryCenter>("telemetry"
     .WithHttpHealthCheck("/health")
     .WithEnvironment("DUCKNET_DB", Path.Combine(dataDir, "telemetry.db"))
     .WithEnvironment("DUCK_COUNT", "5")
-    .WithEnvironment("SQUEAK_MIN_DELAY_MS", "20")
-    .WithEnvironment("SQUEAK_MAX_DELAY_MS", "80")
+    .WithEnvironment("SQUEAK_MIN_DELAY_MS", "2")
+    .WithEnvironment("SQUEAK_MAX_DELAY_MS", "6")
+    .WithEnvironment("LOUD_DUCK_ID", "duck-1")
     .WithEnvironment("RUN_SIMULATOR", "true");
 
 builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")
@@ -17,12 +18,16 @@ builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")
     .WithEnvironment("ALARM_RATE_THRESHOLD", "10")
     .WithEnvironment("ALARM_WINDOW_SECONDS", "60")
     .WithEnvironment("EVENT_LOG_URL", telemetry.GetEndpoint("http"))
+    .WithEnvironment("SHARD_COUNT", "3")
+    .WithEnvironment("HANDLE_DELAY_MS", "12")
     .WaitFor(telemetry);
 
 builder.AddProject<Projects.DuckNet_DashboardCenter>("dashboard")
     .WithHttpHealthCheck("/health")
     .WithEnvironment("DUCKNET_DB", Path.Combine(dataDir, "dashboard.db"))
     .WithEnvironment("EVENT_LOG_URL", telemetry.GetEndpoint("http"))
+    .WithEnvironment("SHARD_COUNT", "3")
+    .WithEnvironment("HANDLE_DELAY_MS", "12")
     .WaitFor(telemetry);
 
 builder.Build().Run();

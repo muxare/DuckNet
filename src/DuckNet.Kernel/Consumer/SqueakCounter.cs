@@ -19,8 +19,17 @@ public sealed class SqueakCounter
     private readonly int _logEvery;
     private readonly bool _logDuplicates;
     private readonly TextWriter _output;
+    private readonly object _gate = new();
     private readonly Dictionary<string, long> _countsByDuck = new();
     private readonly Dictionary<string, long> _lastSeqByDuck = new();
+    private readonly int _shardCount;
+    private readonly int _shardCapacity;
+    private readonly TimeSpan _handleDelay;
+    private ShardWorkerPool? _pool;
+    private long _totalCount;
+    private long _attemptCount;
+    private long _outOfOrderCount;
+    private long _deadLetteredCount;
 
     public SqueakCounter(
         IEventBus eventBus,
@@ -37,7 +46,10 @@ public sealed class SqueakCounter
         EventUpcasterPipeline? upcasters = null,
         RetryPipeline? retry = null,
         DeadLetterStore? deadLetters = null,
-        KernelDb? db = null)
+        KernelDb? db = null,
+        int shardCount = PartitionShard.DefaultCount,
+        TimeSpan? handleDelay = null,
+        int shardCapacity = PartitionShard.DefaultCapacity)
     {
         _eventBus = eventBus;
         _consumerGroup = consumerGroup;
@@ -52,6 +64,9 @@ public sealed class SqueakCounter
         _logEvery = logEvery;
         _logDuplicates = logDuplicates;
         _output = output ?? Console.Out;
+        _shardCount = shardCount < 1 ? 1 : shardCount;
+        _shardCapacity = shardCapacity < 1 ? PartitionShard.DefaultCapacity : shardCapacity;
+        _handleDelay = handleDelay ?? TimeSpan.Zero;
 
         if (restoredCounts is null)
         {
@@ -62,40 +77,75 @@ public sealed class SqueakCounter
         {
             _countsByDuck[duckId] = restored.Count;
             _lastSeqByDuck[duckId] = restored.LastSeq;
-            TotalCount += restored.Count;
+            _totalCount += restored.Count;
         }
     }
 
-    public long TotalCount { get; private set; }
+    public long TotalCount => Interlocked.Read(ref _totalCount);
 
-    public long AttemptCount { get; private set; }
+    public long AttemptCount => Interlocked.Read(ref _attemptCount);
 
-    public long OutOfOrderCount { get; private set; }
+    public long OutOfOrderCount => Interlocked.Read(ref _outOfOrderCount);
 
-    public long DeadLetteredCount { get; private set; }
+    public long DeadLetteredCount => Interlocked.Read(ref _deadLetteredCount);
 
     public PerKeySequencer? Sequencer => _sequencer;
 
-    public IReadOnlyDictionary<string, long> CountsByDuck => _countsByDuck;
+    public ShardMetricsSnapshot? ShardSnapshot => _pool?.Snapshot();
+
+    public IReadOnlyDictionary<string, long> CountsByDuck
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return new Dictionary<string, long>(_countsByDuck);
+            }
+        }
+    }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        await foreach (var envelope in _eventBus.SubscribeAsync(_consumerGroup, cancellationToken))
+        await using var pool = new ShardWorkerPool(
+            _shardCount,
+            (envelope, _) =>
+            {
+                HandleDispatched(envelope);
+                return Task.CompletedTask;
+            },
+            _shardCapacity);
+        _pool = pool;
+
+        try
         {
-            if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal))
+            await foreach (var envelope in _eventBus.SubscribeAsync(_consumerGroup, cancellationToken))
             {
-                continue;
+                if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                await pool.DispatchAsync(envelope, cancellationToken).ConfigureAwait(false);
             }
-
-            AttemptCount++;
-
-            foreach (var ready in Release(envelope))
-            {
-                HandleReady(ready);
-            }
-
-            _sequencer?.ReportGaps(_gapTimeout, _output);
         }
+        finally
+        {
+            await pool.DrainAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public Task DrainAsync(CancellationToken cancellationToken = default) =>
+        _pool?.DrainAsync(cancellationToken) ?? Task.CompletedTask;
+
+    private void HandleDispatched(EventEnvelope envelope)
+    {
+        Interlocked.Increment(ref _attemptCount);
+        foreach (var ready in Release(envelope))
+        {
+            HandleReady(ready);
+        }
+
+        _sequencer?.ReportGaps(_gapTimeout, _output);
     }
 
     private IReadOnlyList<EventEnvelope> Release(EventEnvelope envelope)
@@ -118,6 +168,11 @@ public sealed class SqueakCounter
 
     private void HandleReady(EventEnvelope envelope)
     {
+        if (_handleDelay > TimeSpan.Zero)
+        {
+            Thread.Sleep(_handleDelay);
+        }
+
         if (_retry is null || _deadLetters is null || _db is null)
         {
             HandleReadyCore(envelope);
@@ -198,7 +253,6 @@ public sealed class SqueakCounter
 
     private void HandleDurable(EventEnvelope envelope, Squeaked squeaked)
     {
-        var last = _lastSeqByDuck.GetValueOrDefault(squeaked.DuckId, 0);
         var applied = _checkpoint!.TryCommit(new EventEnvelopeHandle(
             envelope.EventId,
             squeaked.DuckId,
@@ -211,37 +265,37 @@ public sealed class SqueakCounter
             return;
         }
 
-        NoteApplied(squeaked, last);
+        NoteApplied(squeaked);
         LogProgress();
     }
 
-    private void ApplySideEffect(Squeaked squeaked)
-    {
-        var last = _lastSeqByDuck.GetValueOrDefault(squeaked.DuckId, 0);
-        NoteApplied(squeaked, last);
-    }
+    private void ApplySideEffect(Squeaked squeaked) => NoteApplied(squeaked);
 
-    private void NoteApplied(Squeaked squeaked, long last)
+    private void NoteApplied(Squeaked squeaked)
     {
-        if (squeaked.SequenceNumber > last)
+        lock (_gate)
         {
-            if (squeaked.SequenceNumber != last + 1)
+            var last = _lastSeqByDuck.GetValueOrDefault(squeaked.DuckId, 0);
+            if (squeaked.SequenceNumber > last)
             {
-                OutOfOrderCount++;
-                _output.WriteLine(
-                    $"Out of order {squeaked.DuckId} seq {squeaked.SequenceNumber} after {last}");
+                if (squeaked.SequenceNumber != last + 1)
+                {
+                    Interlocked.Increment(ref _outOfOrderCount);
+                    _output.WriteLine(
+                        $"Out of order {squeaked.DuckId} seq {squeaked.SequenceNumber} after {last}");
+                }
+
+                _lastSeqByDuck[squeaked.DuckId] = squeaked.SequenceNumber;
             }
 
-            _lastSeqByDuck[squeaked.DuckId] = squeaked.SequenceNumber;
+            Interlocked.Increment(ref _totalCount);
+            _countsByDuck[squeaked.DuckId] = _countsByDuck.GetValueOrDefault(squeaked.DuckId) + 1;
         }
-
-        TotalCount++;
-        _countsByDuck[squeaked.DuckId] = _countsByDuck.GetValueOrDefault(squeaked.DuckId) + 1;
     }
 
     private void DeadLetter(EventEnvelope envelope, RetryResult result)
     {
-        DeadLetteredCount++;
+        Interlocked.Increment(ref _deadLetteredCount);
         var error = $"{result.Error!.GetType().Name}: {result.Error.Message}";
         _output.WriteLine(
             $"Dead-letter {envelope.EventId} after {result.Attempts} attempts: {result.Error.Message}");
@@ -268,7 +322,20 @@ public sealed class SqueakCounter
     {
         if (TotalCount % _logEvery == 0)
         {
-            _output.WriteLine($"[SqueakCounter] processed={TotalCount}");
+            _output.WriteLine($"[SqueakCounter] processed={TotalCount} shards={FormatShards()}");
         }
+    }
+
+    private string FormatShards()
+    {
+        var snapshot = _pool?.Snapshot();
+        if (snapshot is null)
+        {
+            return "-";
+        }
+
+        return string.Join(
+            ' ',
+            snapshot.Shards.Select(s => $"[{s.Id} q={s.Queued} lag={s.Lag} bp={s.Backpressure}]"));
     }
 }

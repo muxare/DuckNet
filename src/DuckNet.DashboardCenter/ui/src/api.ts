@@ -18,6 +18,32 @@ export type DashboardStats = {
   rowCount: number;
   lastOffset: number;
   database: string;
+  shardCount?: number;
+  shards?: ShardSnapshot[];
+  keys?: KeyLagSnapshot[];
+};
+
+export type ShardSnapshot = {
+  id: number;
+  queued: number;
+  lag: number;
+  lastOffset: number;
+  maxOffset: number;
+  backpressure: number;
+  processed: number;
+};
+
+export type KeyLagSnapshot = {
+  partitionKey: string;
+  shard: number;
+  lastLagMs: number;
+  maxLagMs: number;
+  processed: number;
+};
+
+export type ShardMetrics = {
+  shards: ShardSnapshot[];
+  keys: KeyLagSnapshot[];
 };
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -33,6 +59,10 @@ export function fetchSummary(): Promise<DashboardSummary> {
 
 export function fetchStats(): Promise<DashboardStats> {
   return fetch("/stats").then((r) => readJson<DashboardStats>(r));
+}
+
+export function fetchMetrics(): Promise<ShardMetrics> {
+  return fetch("/metrics").then((r) => readJson<ShardMetrics>(r));
 }
 
 export async function rebuildDashboard(): Promise<void> {

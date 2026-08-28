@@ -69,7 +69,10 @@ public static class AlarmApp
             offsets,
             alarms,
             sequencer,
-            deadLetters: sp.GetRequiredService<DeadLetterStore>()));
+            deadLetters: sp.GetRequiredService<DeadLetterStore>(),
+            shardCount: opts.ShardCount,
+            handleDelay: TimeSpan.FromMilliseconds(opts.HandleDelayMs),
+            shardCapacity: opts.ShardCapacity));
         builder.Services.AddSingleton(sp => new HttpLogTailFeeder(
             sp.GetRequiredService<HttpLogClient>(),
             duplicator,
@@ -108,10 +111,11 @@ public static class AlarmApp
                 ? Results.Ok(new { id, status = "skipped" })
                 : Results.NotFound();
         });
-        app.MapGet("/stats", (KernelDb kernelDb, AlarmStore store, ConsumerOffsetStore offsetStore, DeadLetterStore dlq) =>
+        app.MapGet("/stats", (KernelDb kernelDb, AlarmStore store, ConsumerOffsetStore offsetStore, DeadLetterStore dlq, AlarmConsumer consumer) =>
         {
             var rows = kernelDb.Read(conn => store.List(conn));
             var dlqCount = kernelDb.Read(conn => dlq.Count(conn, AlarmConsumer.ConsumerGroup));
+            var shards = consumer.ShardSnapshot;
             return Results.Json(new
             {
                 alarmCount = rows.Count,
@@ -119,8 +123,17 @@ public static class AlarmApp
                 database = kernelDb.DataSource,
                 threshold = store.Threshold,
                 windowSeconds = store.WindowSeconds,
-                dlqCount
+                dlqCount,
+                shardCount = shards?.Shards.Count ?? opts.ShardCount,
+                shards = shards?.Shards,
+                keys = shards?.Keys
             });
+        });
+        app.MapGet("/metrics", (AlarmConsumer consumer) =>
+        {
+            var snapshot = consumer.ShardSnapshot
+                ?? new ShardMetricsSnapshot(Array.Empty<ShardSnapshot>(), Array.Empty<KeyLagSnapshot>());
+            return Results.Json(snapshot);
         });
 
         return app;
@@ -139,7 +152,10 @@ public sealed record AlarmOptions(
     double DuplicateRate,
     bool ShuffleEnabled,
     int ShuffleWindow,
-    string? Urls)
+    string? Urls,
+    int ShardCount = PartitionShard.DefaultCount,
+    int HandleDelayMs = 0,
+    int ShardCapacity = PartitionShard.DefaultCapacity)
 {
     public static AlarmOptions FromConfiguration(string[] args)
     {
@@ -161,7 +177,10 @@ public sealed record AlarmOptions(
             DuplicateRate: ParseRate(config["DUPLICATE_RATE"], 0.15),
             ShuffleEnabled: !IsFalse(config["SHUFFLE_ENABLED"]),
             ShuffleWindow: ParseInt(config["SHUFFLE_WINDOW"], 50),
-            Urls: config["URLS"]);
+            Urls: config["URLS"],
+            ShardCount: ParseInt(config["SHARD_COUNT"], PartitionShard.DefaultCount),
+            HandleDelayMs: ParseInt(config["HANDLE_DELAY_MS"], 0),
+            ShardCapacity: ParseInt(config["SHARD_CAPACITY"], PartitionShard.DefaultCapacity));
     }
 
     private static bool IsTrue(string? value) =>

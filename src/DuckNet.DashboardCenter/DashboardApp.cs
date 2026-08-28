@@ -76,7 +76,10 @@ public static class DashboardApp
             offsets,
             readModel,
             sp.GetRequiredService<HttpLogTailFeeder>(),
-            deadLetters: sp.GetRequiredService<DeadLetterStore>()));
+            deadLetters: sp.GetRequiredService<DeadLetterStore>(),
+            shardCount: opts.ShardCount,
+            handleDelay: TimeSpan.FromMilliseconds(opts.HandleDelayMs),
+            shardCapacity: opts.ShardCapacity));
 
         builder.Services.AddHostedService<DashboardFeederHostedService>();
         builder.Services.AddHostedService<DashboardConsumerHostedService>();
@@ -122,12 +125,13 @@ public static class DashboardApp
                 ? Results.Ok(new { id, status = "skipped" })
                 : Results.NotFound();
         });
-        app.MapGet("/stats", (KernelDb kernelDb, DashboardReadModel model, ConsumerOffsetStore offsetStore, DeadLetterStore dlq) =>
+        app.MapGet("/stats", (KernelDb kernelDb, DashboardReadModel model, ConsumerOffsetStore offsetStore, DeadLetterStore dlq, DashboardConsumer consumer) =>
         {
             var total = kernelDb.Read(conn => model.TotalCount(conn));
             var volume = kernelDb.Read(conn => model.TotalVolumeDb(conn));
             var rows = kernelDb.Read(conn => model.List(conn));
             var dlqCount = kernelDb.Read(conn => dlq.Count(conn, DashboardConsumer.ConsumerGroup));
+            var shards = consumer.ShardSnapshot;
             return Results.Json(new
             {
                 totalSqueaks = total,
@@ -135,8 +139,17 @@ public static class DashboardApp
                 rowCount = rows.Count,
                 lastOffset = offsetStore.LastOffset,
                 database = kernelDb.DataSource,
-                dlqCount
+                dlqCount,
+                shardCount = shards?.Shards.Count ?? opts.ShardCount,
+                shards = shards?.Shards,
+                keys = shards?.Keys
             });
+        });
+        app.MapGet("/metrics", (DashboardConsumer consumer) =>
+        {
+            var snapshot = consumer.ShardSnapshot
+                ?? new ShardMetricsSnapshot(Array.Empty<ShardSnapshot>(), Array.Empty<KeyLagSnapshot>());
+            return Results.Json(snapshot);
         });
 
         return app;
@@ -182,7 +195,10 @@ public sealed record DashboardOptions(
     double DuplicateRate,
     bool ShuffleEnabled,
     int ShuffleWindow,
-    string? Urls)
+    string? Urls,
+    int ShardCount = PartitionShard.DefaultCount,
+    int HandleDelayMs = 0,
+    int ShardCapacity = PartitionShard.DefaultCapacity)
 {
     public static DashboardOptions FromConfiguration(string[] args)
     {
@@ -202,7 +218,10 @@ public sealed record DashboardOptions(
             DuplicateRate: ParseRate(config["DUPLICATE_RATE"], 0.15),
             ShuffleEnabled: !IsFalse(config["SHUFFLE_ENABLED"]),
             ShuffleWindow: ParseInt(config["SHUFFLE_WINDOW"], 50),
-            Urls: config["URLS"]);
+            Urls: config["URLS"],
+            ShardCount: ParseInt(config["SHARD_COUNT"], PartitionShard.DefaultCount),
+            HandleDelayMs: ParseInt(config["HANDLE_DELAY_MS"], 0),
+            ShardCapacity: ParseInt(config["SHARD_CAPACITY"], PartitionShard.DefaultCapacity));
     }
 
     private static bool IsTrue(string? value) =>

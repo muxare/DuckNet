@@ -21,6 +21,14 @@ public sealed class AlarmConsumer
     private readonly DeadLetterStore _deadLetters;
     private readonly TextWriter _output;
     private readonly TimeSpan _gapTimeout;
+    private readonly int _shardCount;
+    private readonly int _shardCapacity;
+    private readonly TimeSpan _handleDelay;
+    private ShardWorkerPool? _pool;
+    private long _handledCount;
+    private long _raisedCount;
+    private long _attemptCount;
+    private long _deadLetteredCount;
 
     public AlarmConsumer(
         IEventBus eventBus,
@@ -33,7 +41,10 @@ public sealed class AlarmConsumer
         TimeSpan? gapTimeout = null,
         EventUpcasterPipeline? upcasters = null,
         RetryPipeline? retry = null,
-        DeadLetterStore? deadLetters = null)
+        DeadLetterStore? deadLetters = null,
+        int shardCount = PartitionShard.DefaultCount,
+        TimeSpan? handleDelay = null,
+        int shardCapacity = PartitionShard.DefaultCapacity)
     {
         _eventBus = eventBus;
         _db = db;
@@ -46,36 +57,66 @@ public sealed class AlarmConsumer
         _upcasters = upcasters ?? EventUpcasterPipeline.Default;
         _retry = retry ?? new RetryPipeline();
         _deadLetters = deadLetters ?? new DeadLetterStore();
+        _shardCount = shardCount < 1 ? 1 : shardCount;
+        _shardCapacity = shardCapacity < 1 ? PartitionShard.DefaultCapacity : shardCapacity;
+        _handleDelay = handleDelay ?? TimeSpan.Zero;
     }
 
-    public long HandledCount { get; private set; }
+    public long HandledCount => Interlocked.Read(ref _handledCount);
 
-    public long RaisedCount { get; private set; }
+    public long RaisedCount => Interlocked.Read(ref _raisedCount);
 
-    public long AttemptCount { get; private set; }
+    public long AttemptCount => Interlocked.Read(ref _attemptCount);
 
-    public long DeadLetteredCount { get; private set; }
+    public long DeadLetteredCount => Interlocked.Read(ref _deadLetteredCount);
 
     public ConsumerOffsetStore Offsets => _offsets;
 
+    public ShardMetricsSnapshot? ShardSnapshot => _pool?.Snapshot();
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        await foreach (var envelope in _eventBus.SubscribeAsync(ConsumerGroup, cancellationToken))
+        await using var pool = new ShardWorkerPool(
+            _shardCount,
+            (envelope, _) =>
+            {
+                HandleDispatched(envelope);
+                return Task.CompletedTask;
+            },
+            _shardCapacity);
+        _pool = pool;
+
+        try
         {
-            if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal))
+            await foreach (var envelope in _eventBus.SubscribeAsync(ConsumerGroup, cancellationToken))
             {
-                AdvanceOffset(envelope.LogOffset);
-                continue;
+                await pool.DispatchAsync(envelope, cancellationToken).ConfigureAwait(false);
             }
-
-            AttemptCount++;
-            foreach (var ready in Release(envelope))
-            {
-                HandleReady(ready);
-            }
-
-            _sequencer?.ReportGaps(_gapTimeout, _output);
         }
+        finally
+        {
+            await pool.DrainAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public Task DrainAsync(CancellationToken cancellationToken = default) =>
+        _pool?.DrainAsync(cancellationToken) ?? Task.CompletedTask;
+
+    private void HandleDispatched(EventEnvelope envelope)
+    {
+        if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal))
+        {
+            AdvanceOffset(envelope.LogOffset);
+            return;
+        }
+
+        Interlocked.Increment(ref _attemptCount);
+        foreach (var ready in Release(envelope))
+        {
+            HandleReady(ready);
+        }
+
+        _sequencer?.ReportGaps(_gapTimeout, _output);
     }
 
     private IReadOnlyList<EventEnvelope> Release(EventEnvelope envelope)
@@ -90,6 +131,11 @@ public sealed class AlarmConsumer
 
     private void HandleReady(EventEnvelope envelope)
     {
+        if (_handleDelay > TimeSpan.Zero)
+        {
+            Thread.Sleep(_handleDelay);
+        }
+
         var result = _retry.Execute(() => HandleReadyCore(envelope));
         if (!result.Succeeded)
         {
@@ -153,10 +199,10 @@ public sealed class AlarmConsumer
             return;
         }
 
-        HandledCount++;
+        Interlocked.Increment(ref _handledCount);
         if (raised)
         {
-            RaisedCount++;
+            Interlocked.Increment(ref _raisedCount);
             _output.WriteLine(
                 $"AlarmRaised {squeaked.DuckId} after {HandledCount} unique squeaks (EventId={envelope.EventId})");
         }
@@ -164,7 +210,7 @@ public sealed class AlarmConsumer
 
     private void DeadLetter(EventEnvelope envelope, RetryResult result)
     {
-        DeadLetteredCount++;
+        Interlocked.Increment(ref _deadLetteredCount);
         var error = $"{result.Error!.GetType().Name}: {result.Error.Message}";
         _output.WriteLine(
             $"Dead-letter {envelope.EventId} after {result.Attempts} attempts: {result.Error.Message}");

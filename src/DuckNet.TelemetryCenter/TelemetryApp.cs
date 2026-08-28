@@ -38,7 +38,8 @@ public static class TelemetryApp
             opts.DuckCount,
             opts.Seed,
             opts.MinDelayMs,
-            opts.MaxDelayMs);
+            opts.MaxDelayMs,
+            opts.LoudDuckId);
         var dispatcher = new OutboxDispatcher(db, outbox, log);
 
         if (opts.InjectPoisonEvent)
@@ -114,7 +115,8 @@ public sealed record TelemetryOptions(
     int MinDelayMs,
     int MaxDelayMs,
     string? Urls,
-    bool InjectPoisonEvent = false)
+    bool InjectPoisonEvent = false,
+    string? LoudDuckId = null)
 {
     public static TelemetryOptions FromConfiguration(string[] args)
     {
@@ -132,7 +134,8 @@ public sealed record TelemetryOptions(
             MinDelayMs: ParseInt(config["SQUEAK_MIN_DELAY_MS"], 20),
             MaxDelayMs: ParseInt(config["SQUEAK_MAX_DELAY_MS"], 80),
             Urls: config["URLS"],
-            InjectPoisonEvent: IsTrue(config["INJECT_POISON_EVENT"]));
+            InjectPoisonEvent: IsTrue(config["INJECT_POISON_EVENT"]),
+            LoudDuckId: string.IsNullOrWhiteSpace(config["LOUD_DUCK_ID"]) ? null : config["LOUD_DUCK_ID"]);
     }
 
     private static bool IsTrue(string? value) =>

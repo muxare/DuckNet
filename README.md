@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 7 — poison messages + DLQ**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 8 — backpressure + hot partitions**.
 
 ## Rules
 
@@ -25,6 +25,29 @@ dotnet test
 ```
 
 ## Demos
+
+### Step 8 — hot partitions (kernel)
+
+One LoudDuck squeaks 100× more than the others. A single worker (`--shard-count 1`) lets quiet ducks wait behind it. Three shards isolate the hot key. Lag prints per shard and per duck.
+
+```bash
+dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 1 --hot-demo --shard-count 1 --no-shuffle --duplicate-rate 0
+dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 1 --hot-demo --shard-count 3 --no-shuffle --duplicate-rate 0
+```
+
+`--hot-demo` sets `LOUD_DUCK_ID=duck-1`, 8ms handle delay, and fast emits. Compare `maxLagMs` for ducks that did **not** hash onto shard 0.
+
+### Step 8 — Aspire
+
+LoudDuck is on. Alarm and Dashboard run three shard workers and a 12ms handle delay. Dashboard shows per-shard queue/lag. `GET /metrics` on alarm or dashboard is the JSON.
+
+```bash
+dotnet run --project src/DuckNet.AppHost
+```
+
+Set `SHARD_COUNT=1` on alarm or dashboard to re-starve quiet keys.
+
+Agent shortcut: `/run-aspire`.
 
 ### Step 7 — poison + DLQ (Aspire)
 
@@ -76,6 +99,9 @@ Stop `alarm`, wait for a burst, start it again — `GET /alarms` still fills in 
 | `ALARM_WINDOW_SECONDS` | 60 | event-time sliding window |
 | `EVENT_LOG_URL` | (Aspire injects) | Telemetry base URL for `/bus/events` |
 | `DUCKNET_DB` | per-Center file under AppHost `data/` | SQLite path |
+| `LOUD_DUCK_ID` | `duck-1` (Aspire) | 100× squeak weight |
+| `SHARD_COUNT` | 3 | consumer workers; `1` starves quiet keys |
+| `HANDLE_DELAY_MS` | 12 (Aspire) | fake handler work so lag is visible |
 
 Agent shortcut: `/run-aspire`.
 
@@ -95,9 +121,9 @@ dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 
 Agent shortcuts: `/run-demo`, `/mis-demo`.
 
-**What to look for (Aspire):** Click DashboardCenter — Vue table still fills after a poison inject. Alarm and Dashboard `/dlq` show the error + payload. `/stats` `dlqCount` is 1 until replay or skip. `/stats` `database` is still each Center's file, never `telemetry.db`.
+**What to look for (Aspire):** Dashboard shard cards — LoudDuck's shard has queue depth and lag; other shards stay near 0. `GET /metrics` on alarm or dashboard. `/stats` `database` is still each Center's file, never `telemetry.db`.
 
-**What to look for (kernel):** with defenses on, `Published (session) == Counted (lifetime)` on a fresh DB, `Log rows == Counted`, and `Out of order == 0`. With `--inject-poison`, `Log rows == Counted + 1` and `DLQ rows == 1`.
+**What to look for (kernel):** `--hot-demo --shard-count 1` → every duck's `maxLagMs` is huge. `--shard-count 3` → only keys that hash onto the LoudDuck shard lag; others stay around the handle delay. With defenses on and no poison, `Published == Counted` and `Out of order == 0`.
 
 ## Layout
 
@@ -105,10 +131,10 @@ Agent shortcuts: `/run-demo`, `/mis-demo`.
 src/DuckNet.AppHost/          # Aspire orchestration
 src/DuckNet.Contracts/        # event records + versions only
 src/DuckNet.EventBus/         # IEventBus + HTTP log adapter + upcasters
-src/DuckNet.Kernel/           # durable primitives + console (retry, DLQ CLI)
-src/DuckNet.TelemetryCenter/  # owns event_log; POST /bus/poison
-src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised, DLQ
-src/DuckNet.DashboardCenter/  # disposable read model + Vue UI + DLQ
+src/DuckNet.Kernel/           # durable primitives + console (shards, retry, DLQ CLI)
+src/DuckNet.TelemetryCenter/  # owns event_log; LoudDuck; POST /bus/poison
+src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised, DLQ, shards, GET /metrics
+src/DuckNet.DashboardCenter/  # disposable read model + Vue UI + DLQ + shard lag
 tests/
 infra/docker/                 # one image per Center
 ```
@@ -131,8 +157,9 @@ infra/docker/                 # one image per Center
 | 4 | complete | Two Centers, two DBs; Alarm catches up from the log |
 | 5 | complete | Delete the dashboard, rebuild from the log |
 | 6 | complete | Mixed v1/v2 log; upcast at the consumer, not in the bus |
-| 7 | in progress | One poison message; retry → DLQ; stream continues |
-| 8+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 7 | complete | One poison message; retry → DLQ; stream continues |
+| 8 | in progress | LoudDuck + sharding; quiet keys stay near real-time |
+| 9+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

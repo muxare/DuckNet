@@ -478,9 +478,9 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] One bad event does not block partition processing.
-- [ ] DLQ row inspectable (error message, payload).
-- [ ] Manual replay succeeds after fix or skip.
+- [x] One bad event does not block partition processing.
+- [x] DLQ row inspectable (error message, payload).
+- [x] Manual replay succeeds after fix or skip.
 
 **Estimated effort:** ~1 evening.
 

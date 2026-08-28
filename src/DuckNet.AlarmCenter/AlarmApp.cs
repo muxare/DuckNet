@@ -56,6 +56,7 @@ public static class AlarmApp
         builder.Services.AddSingleton(offsets);
         builder.Services.AddSingleton(outbox);
         builder.Services.AddSingleton(alarms);
+        builder.Services.AddSingleton(new DeadLetterStore());
         builder.Services.AddSingleton(inner);
         builder.Services.AddSingleton<IEventBus>(duplicator);
         builder.Services.AddSingleton(duplicator);
@@ -67,7 +68,8 @@ public static class AlarmApp
             inbox,
             offsets,
             alarms,
-            sequencer));
+            sequencer,
+            deadLetters: sp.GetRequiredService<DeadLetterStore>()));
         builder.Services.AddSingleton(sp => new HttpLogTailFeeder(
             sp.GetRequiredService<HttpLogClient>(),
             duplicator,
@@ -89,16 +91,35 @@ public static class AlarmApp
             var rows = kernelDb.Read(conn => store.List(conn));
             return Results.Json(rows);
         });
-        app.MapGet("/stats", (KernelDb kernelDb, AlarmStore store, ConsumerOffsetStore offsetStore) =>
+        app.MapGet("/dlq", (KernelDb kernelDb, DeadLetterStore dlq) =>
+        {
+            var rows = kernelDb.Read(conn => dlq.List(conn, AlarmConsumer.ConsumerGroup));
+            return Results.Json(rows);
+        });
+        app.MapPost("/dlq/{id:long}/replay", (long id, bool fix, AlarmConsumer consumer) =>
+        {
+            return consumer.TryReplay(id, fix)
+                ? Results.Ok(new { id, status = "replayed", fix })
+                : Results.NotFound();
+        });
+        app.MapPost("/dlq/{id:long}/skip", (long id, AlarmConsumer consumer) =>
+        {
+            return consumer.TrySkip(id)
+                ? Results.Ok(new { id, status = "skipped" })
+                : Results.NotFound();
+        });
+        app.MapGet("/stats", (KernelDb kernelDb, AlarmStore store, ConsumerOffsetStore offsetStore, DeadLetterStore dlq) =>
         {
             var rows = kernelDb.Read(conn => store.List(conn));
+            var dlqCount = kernelDb.Read(conn => dlq.Count(conn, AlarmConsumer.ConsumerGroup));
             return Results.Json(new
             {
                 alarmCount = rows.Count,
                 lastOffset = offsetStore.LastOffset,
                 database = kernelDb.DataSource,
                 threshold = store.Threshold,
-                windowSeconds = store.WindowSeconds
+                windowSeconds = store.WindowSeconds,
+                dlqCount
             });
         });
 

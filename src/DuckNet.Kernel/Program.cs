@@ -15,10 +15,33 @@ var sequencerState = options.SequencerEnabled ? "on" : "OFF";
 var shuffleState = options.ShuffleEnabled
     ? $"on (window={options.ShuffleWindow})"
     : "off";
+
+if (options.ListDlq)
+{
+    Environment.ExitCode = KernelDlqCli.List(options.DatabasePath, Console.Out);
+    return;
+}
+
+if (options.ReplayDlqId is { } replayId)
+{
+    Environment.ExitCode = KernelDlqCli.Replay(
+        options.DatabasePath,
+        replayId,
+        options.FixDlq,
+        Console.Out);
+    return;
+}
+
+if (options.SkipDlqId is { } skipId)
+{
+    Environment.ExitCode = KernelDlqCli.Skip(options.DatabasePath, skipId, Console.Out);
+    return;
+}
+
 Console.WriteLine(
-    $"DuckNet Step 3 — durable log + outbox for {options.Seconds}s (Ctrl+C to stop early)");
+    $"DuckNet Step 7 — durable log + retry/DLQ for {options.Seconds}s (Ctrl+C to stop early)");
 Console.WriteLine(
-    $"db={options.DatabasePath} reset={options.ResetDatabase} duplicateRate={options.DuplicateRate.ToString("0.00", CultureInfo.InvariantCulture)} shuffle={shuffleState} inbox={inboxState} sequencer={sequencerState}");
+    $"db={options.DatabasePath} reset={options.ResetDatabase} duplicateRate={options.DuplicateRate.ToString("0.00", CultureInfo.InvariantCulture)} shuffle={shuffleState} inbox={inboxState} sequencer={sequencerState} injectPoison={options.InjectPoison}");
 if (!options.InboxEnabled || !options.SequencerEnabled)
 {
     Console.WriteLine("Mis-demo: consumer defenses off — counts and/or per-key order may be wrong.");
@@ -41,6 +64,7 @@ try
         sequencerEnabled: options.SequencerEnabled,
         databasePath: options.DatabasePath,
         resetDatabase: options.ResetDatabase,
+        injectPoison: options.InjectPoison,
         cancellationToken: cts.Token);
 
     Console.WriteLine($"Published:   {result.PublishedCount} (session)");
@@ -48,6 +72,7 @@ try
     Console.WriteLine($"Counted:     {result.TotalCount} (lifetime)");
     Console.WriteLine($"Log rows:    {result.LogCount}");
     Console.WriteLine($"Log offset:  {result.LastOffset}");
+    Console.WriteLine($"DLQ rows:    {result.DeadLetteredCount}");
     Console.WriteLine($"Inbox skips: {result.DuplicateSkips}");
     Console.WriteLine($"Late drops:  {result.SequencerLateDrops}");
     Console.WriteLine($"Out of order:{result.OutOfOrderCount}");
@@ -80,6 +105,11 @@ internal static class DemoCli
         var sequencerEnabled = !IsFalse(Environment.GetEnvironmentVariable("SEQUENCER_ENABLED"));
         var databasePath = Environment.GetEnvironmentVariable("DUCKNET_DB") ?? DefaultDatabasePath;
         var resetDatabase = false;
+        var injectPoison = IsTrue(Environment.GetEnvironmentVariable("INJECT_POISON_EVENT"));
+        var listDlq = false;
+        long? replayDlqId = null;
+        long? skipDlqId = null;
+        var fixDlq = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -151,6 +181,52 @@ internal static class DemoCli
                 continue;
             }
 
+            if (arg is "--inject-poison")
+            {
+                injectPoison = true;
+                continue;
+            }
+
+            if (arg is "--list-dlq")
+            {
+                listDlq = true;
+                continue;
+            }
+
+            if (arg is "--fix" or "--fix-dlq")
+            {
+                fixDlq = true;
+                continue;
+            }
+
+            if (arg == "--replay-dlq" && i + 1 < args.Length && long.TryParse(args[i + 1], out var replayId))
+            {
+                replayDlqId = replayId;
+                i++;
+                continue;
+            }
+
+            if (arg.StartsWith("--replay-dlq=", StringComparison.Ordinal)
+                && long.TryParse(arg["--replay-dlq=".Length..], out var replayEqualsId))
+            {
+                replayDlqId = replayEqualsId;
+                continue;
+            }
+
+            if (arg == "--skip-dlq" && i + 1 < args.Length && long.TryParse(args[i + 1], out var skipId))
+            {
+                skipDlqId = skipId;
+                i++;
+                continue;
+            }
+
+            if (arg.StartsWith("--skip-dlq=", StringComparison.Ordinal)
+                && long.TryParse(arg["--skip-dlq=".Length..], out var skipEqualsId))
+            {
+                skipDlqId = skipEqualsId;
+                continue;
+            }
+
             if (arg == "--shuffle-window" && i + 1 < args.Length)
             {
                 shuffleWindow = ParseWindow(args[++i], shuffleWindow);
@@ -171,7 +247,12 @@ internal static class DemoCli
             shuffleWindow,
             sequencerEnabled,
             databasePath,
-            resetDatabase);
+            resetDatabase,
+            injectPoison,
+            listDlq,
+            replayDlqId,
+            skipDlqId,
+            fixDlq);
     }
 
     private static double ParseRate(string? value, double fallback) =>
@@ -184,6 +265,10 @@ internal static class DemoCli
         int.TryParse(value, CultureInfo.InvariantCulture, out var parsed) && parsed >= 1
             ? parsed
             : fallback;
+
+    private static bool IsTrue(string? value) =>
+        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+        || value == "1";
 
     private static bool IsFalse(string? value) =>
         string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
@@ -198,4 +283,9 @@ internal sealed record DemoCliOptions(
     int ShuffleWindow,
     bool SequencerEnabled,
     string DatabasePath,
-    bool ResetDatabase);
+    bool ResetDatabase,
+    bool InjectPoison,
+    bool ListDlq,
+    long? ReplayDlqId,
+    long? SkipDlqId,
+    bool FixDlq);

@@ -49,7 +49,7 @@ public sealed class AlarmStore
         cmd.Transaction = tx;
         cmd.CommandText = """
             INSERT INTO duck_progress (duck_id, last_seq) VALUES ($id, $seq)
-            ON CONFLICT(duck_id) DO UPDATE SET last_seq = $seq
+            ON CONFLICT(duck_id) DO UPDATE SET last_seq = MAX(last_seq, $seq)
             """;
         cmd.Parameters.AddWithValue("$id", duckId);
         cmd.Parameters.AddWithValue("$seq", sequenceNumber);

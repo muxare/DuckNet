@@ -16,6 +16,12 @@ internal static class ConsumerWait
         CancellationToken cancellationToken) =>
         UntilAsync(() => counter.AttemptCount >= expected, cancellationToken);
 
+    public static Task UntilDeadLettersAsync(
+        SqueakCounter counter,
+        long expected,
+        CancellationToken cancellationToken) =>
+        UntilAsync(() => counter.DeadLetteredCount >= expected, cancellationToken);
+
     private static async Task UntilAsync(Func<bool> done, CancellationToken cancellationToken)
     {
         while (!done())

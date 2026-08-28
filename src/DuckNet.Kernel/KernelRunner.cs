@@ -23,6 +23,8 @@ public static class KernelRunner
         bool sequencerEnabled = true,
         string? databasePath = null,
         bool resetDatabase = false,
+        bool injectPoison = false,
+        TimeSpan? retryBaseDelay = null,
         CancellationToken cancellationToken = default)
     {
         var path = databasePath ?? Path.Combine(Path.GetTempPath(), $"ducknet-{Guid.NewGuid():N}.db");
@@ -54,6 +56,10 @@ public static class KernelRunner
         var lastSeq = restored.ToDictionary(x => x.Key, x => x.Value.LastSeq);
         var sequencer = sequencerEnabled ? new PerKeySequencer(lastSeq) : null;
         var checkpoint = new ConsumerCheckpoint(db, inbox, offsets, counts);
+        var deadLetters = new DeadLetterStore();
+        var retry = new RetryPipeline(
+            baseDelay: retryBaseDelay ?? TimeSpan.Zero,
+            sleep: _ => { });
         var counter = new SqueakCounter(
             eventBus,
             consumerGroup: group,
@@ -64,7 +70,10 @@ public static class KernelRunner
             sequencer,
             sequencerEnabled,
             checkpoint: checkpoint,
-            restoredCounts: restored);
+            restoredCounts: restored,
+            retry: retry,
+            deadLetters: deadLetters,
+            db: db);
 
         var dispatcher = new OutboxDispatcher(db, outbox, log);
         var feeder = new LogTailFeeder(db, log, eventBus, startOffset: offsets.LastOffset);
@@ -76,15 +85,28 @@ public static class KernelRunner
 
         await simulator.RunAsync(duration, cancellationToken);
         await dispatcher.DrainAsync(cancellationToken);
+        if (injectPoison)
+        {
+            db.Write((conn, tx) => log.Append(conn, tx, PoisonEvents.MalformedSqueaked()));
+        }
+
         await feeder.CatchUpAsync(cancellationToken);
         await eventBus.FlushAsync();
         await shuffler.FlushAsync();
 
-        var expectedAttempts = simulator.PublishedCount + eventBus.DuplicateCount;
+        var expectedAttempts = simulator.PublishedCount + eventBus.DuplicateCount + (injectPoison ? 1 : 0);
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2);
         while (counter.AttemptCount < expectedAttempts && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(10, cancellationToken);
+        }
+
+        if (injectPoison)
+        {
+            while (counter.DeadLetteredCount < 1 && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(10, cancellationToken);
+            }
         }
 
         linked.Cancel();
@@ -93,6 +115,7 @@ public static class KernelRunner
         await IgnoreCancel(consumerTask);
 
         var logCount = db.Read(conn => log.Count(conn));
+        var dlqCount = db.Read(conn => deadLetters.Count(conn, group));
         return new RunResult(
             counter.TotalCount,
             simulator.PublishedCount,
@@ -103,7 +126,8 @@ public static class KernelRunner
             new Dictionary<string, long>(counter.CountsByDuck),
             logCount,
             offsets.LastOffset,
-            path);
+            path,
+            dlqCount);
     }
 
     public static void DeleteSqliteFiles(string path)
@@ -141,4 +165,5 @@ public sealed record RunResult(
     IReadOnlyDictionary<string, long> CountsByDuck,
     long LogCount,
     long LastOffset,
-    string DatabasePath);
+    string DatabasePath,
+    long DeadLetteredCount = 0);

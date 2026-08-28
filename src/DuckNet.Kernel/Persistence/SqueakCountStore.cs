@@ -40,7 +40,7 @@ public sealed class SqueakCountStore
             VALUES ($g, $d, 1, $seq)
             ON CONFLICT(consumer_group, duck_id) DO UPDATE SET
               count = count + 1,
-              last_seq = $seq
+              last_seq = MAX(last_seq, $seq)
             """;
         cmd.Parameters.AddWithValue("$g", consumerGroup);
         cmd.Parameters.AddWithValue("$d", duckId);

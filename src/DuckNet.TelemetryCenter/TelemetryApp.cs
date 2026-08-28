@@ -41,6 +41,11 @@ public static class TelemetryApp
             opts.MaxDelayMs);
         var dispatcher = new OutboxDispatcher(db, outbox, log);
 
+        if (opts.InjectPoisonEvent)
+        {
+            db.Write((conn, tx) => log.Append(conn, tx, PoisonEvents.MalformedSqueaked()));
+        }
+
         builder.Services.AddSingleton(db);
         builder.Services.AddSingleton(log);
         builder.Services.AddSingleton(publisher);
@@ -70,6 +75,12 @@ public static class TelemetryApp
         {
             var offset = kernelDb.Write((conn, tx) => eventLog.Append(conn, tx, envelope));
             return Results.Json(new { offset });
+        });
+        app.MapPost("/bus/poison", (KernelDb kernelDb, EventLogStore eventLog) =>
+        {
+            var envelope = PoisonEvents.MalformedSqueaked();
+            var offset = kernelDb.Write((conn, tx) => eventLog.Append(conn, tx, envelope));
+            return Results.Json(new { offset, eventId = envelope.EventId, partitionKey = envelope.PartitionKey });
         });
         app.MapPost("/ingest/squeak", async (IngestSqueakRequest request, TransactionalPublisher pub, CancellationToken ct) =>
         {
@@ -102,7 +113,8 @@ public sealed record TelemetryOptions(
     int? Seed,
     int MinDelayMs,
     int MaxDelayMs,
-    string? Urls)
+    string? Urls,
+    bool InjectPoisonEvent = false)
 {
     public static TelemetryOptions FromConfiguration(string[] args)
     {
@@ -119,7 +131,8 @@ public sealed record TelemetryOptions(
             Seed: ParseNullableInt(config["SIMULATOR_SEED"]) ?? 42,
             MinDelayMs: ParseInt(config["SQUEAK_MIN_DELAY_MS"], 20),
             MaxDelayMs: ParseInt(config["SQUEAK_MAX_DELAY_MS"], 80),
-            Urls: config["URLS"]);
+            Urls: config["URLS"],
+            InjectPoisonEvent: IsTrue(config["INJECT_POISON_EVENT"]));
     }
 
     private static bool IsTrue(string? value) =>

@@ -63,7 +63,7 @@ dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
 dotnet run --project src/DuckNet.AppHost
 ```
 
-Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 5). Format hook: `dotnet format` on `*.cs` after agent edits.
+Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 5), `/refactor-scan`. Format hook: `dotnet format` on `*.cs` after agent edits.
 
 ## PR review
 
@@ -94,7 +94,7 @@ Mention `@claude` on any PR or issue to ask questions interactively
 a PR diff: Sonnet finds opportunities, a second Sonnet session scores
 confidence, `jq` merges. One sticky GitHub issue, updated in place. Advisory —
 not a merge gate, not on PRs. `proposed_issues` are drafts; nothing is created
-from them. Local: `bash .github/scripts/run-refactor-scan.sh`.
+from them. Local: `/refactor-scan` or `bash .github/scripts/run-refactor-scan.sh`.
 
 Both review and the refactor scan need the repo secret `CLAUDE_CODE_OAUTH_TOKEN`
 (`claude setup-token`).
@@ -124,7 +124,7 @@ DuckNet is a CCA-F study lab. While working, **spot and propose** reusable agent
 
 When you find one, propose the path, frontmatter (`description`, `allowed-tools`, `argument-hint`, `context: fork` if needed), and why. Wait for approval.
 
-Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; commands `/run-demo`, `/mis-demo`, `/run-aspire`; PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
+Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; commands `/run-demo`, `/mis-demo`, `/run-aspire`, `/refactor-scan`; PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
 
 ## Step progress
 

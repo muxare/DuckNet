@@ -9,15 +9,16 @@
 # Final result: OUTDIR/findings-final.json
 # Issue markdown: format-refactor-scan.sh FINDINGS.json SHA [RUN_URL]
 # env overrides: SCAN_MODEL / VERIFY_MODEL (sonnet), SCAN_BUDGET_USD (1.00),
-# env overrides: SCAN_MODEL / VERIFY_MODEL (sonnet), SCAN_BUDGET_USD (1.00),
 #   VERIFY_BUDGET_USD (0.50), SCAN_MAX_TURNS (40), VERIFY_MAX_TURNS (30)
+# Nested scripts are invoked with bash so GitHub Actions does not depend on +x.
 set -euo pipefail
 
 root=$(cd -- "$(dirname -- "$0")/../.." && pwd)
+scripts="$root/.github/scripts"
 outdir=${1:-/tmp/refactor-scan}
 mkdir -p "$outdir"
 
-"$root/.github/scripts/run-claude.sh" \
+bash "$scripts/run-claude.sh" \
   --schema "$root/.github/schemas/refactor-findings.schema.json" \
   --model "${SCAN_MODEL:-sonnet}" \
   --budget "${SCAN_BUDGET_USD:-1.00}" \
@@ -47,7 +48,7 @@ fi
   printf '```\n'
 } > "$outdir/verify-input.md"
 
-"$root/.github/scripts/run-claude.sh" \
+bash "$scripts/run-claude.sh" \
   --schema "$root/.github/schemas/refactor-verdicts.schema.json" \
   --model "${VERIFY_MODEL:-sonnet}" \
   --budget "${VERIFY_BUDGET_USD:-0.50}" \
@@ -64,7 +65,7 @@ else
     > "$outdir/verdicts.json"
 fi
 
-"$root/.github/scripts/merge-refactor-confidence.sh" \
+bash "$scripts/merge-refactor-confidence.sh" \
   "$outdir/findings.json" "$outdir/verdicts.json" > "$outdir/findings-final.json"
 
 echo "wrote $outdir/findings-final.json"

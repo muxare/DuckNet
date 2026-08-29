@@ -27,7 +27,7 @@ flowchart TD
 - Missing token: job fails (infra); findings never fail the workflow
 
 ### Follow-ups
-**CCA-F (needs OK):** project command `.claude/commands/refactor-scan.md` (`/refactor-scan`) wrapping `run-refactor-scan.sh` for a local run. Human-triggered; the workflow already covers the scheduled path.
+**CCA-F:** `/refactor-scan` — `.claude/commands/refactor-scan.md` (`disable-model-invocation: true`). Local wrap of `run-refactor-scan.sh`; weekly CI stays `refactor-scan.yml`.
 
 **Deferred:** nightly architecture/docs audit (ci-policy C) is a different whole-tree pass — not this scan.
 

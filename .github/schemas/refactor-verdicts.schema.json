@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "properties": {
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "The id of the finding being assessed."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Independent belief that the finding is real, correct as proposed, and worth doing."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "What was checked in the code and what was found, in one or two sentences."
+          }
+        },
+        "required": ["id", "confidence", "rationale"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Anything a human triaging the findings should know. Empty array if none."
+    },
+    "error": { "type": "string" }
+  },
+  "required": ["assessments", "notes"],
+  "additionalProperties": false
+}

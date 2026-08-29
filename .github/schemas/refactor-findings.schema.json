@@ -1,0 +1,108 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "One to three sentences on what was scanned and the overall impression."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Stable kebab-case slug derived from location and kind, e.g. alarmcenter-ratewindow-linq-allocation. Used to dedupe across recurring runs and to join the independent confidence pass."
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["patch", "plan"],
+            "description": "patch: small self-contained fix. plan: larger refactoring decomposed into proposed_issues."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "readability",
+              "duplication",
+              "performance",
+              "simplification",
+              "idiom",
+              "design-pattern",
+              "abstraction",
+              "structure"
+            ],
+            "description": "Kind of refactoring opportunity. The first five are patch-tier, the last three plan-tier."
+          },
+          "title": {
+            "type": "string",
+            "description": "One line, imperative."
+          },
+          "files": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "description": "Repository-relative paths."
+          },
+          "detail": {
+            "type": "string",
+            "description": "What to change and why the result is better (human readability, execution cost, testability, ...)."
+          },
+          "effort": {
+            "type": "string",
+            "enum": ["trivial", "small", "medium", "large"]
+          },
+          "risk": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "description": "Chance the change alters behavior."
+          },
+          "snippet": {
+            "type": "string",
+            "description": "patch tier: the current code, quoted verbatim from the file."
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "patch tier: proposed replacement code, or a precise description of the edit."
+          },
+          "proposed_issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string" },
+                "body": {
+                  "type": "string",
+                  "description": "Markdown: motivation, scope, acceptance criteria."
+                },
+                "labels": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Always includes 'refactoring'."
+                },
+                "depends_on": {
+                  "type": "array",
+                  "items": { "type": "integer" },
+                  "description": "Indices into this same array. Empty if none."
+                }
+              },
+              "required": ["title", "body", "labels", "depends_on"],
+              "additionalProperties": false
+            },
+            "description": "plan tier: ordered decomposition of the refactoring into draft GitHub issues. Nothing is created on GitHub from this — it is input to a human+agent triage."
+          }
+        },
+        "required": ["id", "tier", "category", "title", "files", "detail", "effort", "risk"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Observations that did not clear the finding bar. Empty array if none."
+    },
+    "error": { "type": "string" }
+  },
+  "required": ["summary", "findings", "notes"],
+  "additionalProperties": false
+}

@@ -1,0 +1,47 @@
+{
+  "summary": "Scanned src/ (7 projects, ~58 C# files) and tests/. Overall shape is clean; the consumer pipeline carries most of the small opportunities.",
+  "findings": [
+    {
+      "id": "alarmcenter-ratewindow-linq-allocation",
+      "tier": "patch",
+      "category": "performance",
+      "title": "Avoid re-materializing the rate window list on every squeak",
+      "files": ["src/DuckNet.AlarmCenter/RateWindow.cs"],
+      "detail": "The window is rebuilt with Where().ToList() on every event, allocating a new list on the hot consumer path. A Queue with head-trimming does the same cutoff work without per-event allocation.",
+      "effort": "small",
+      "risk": "low",
+      "snippet": "_events = _events.Where(e => e.Timestamp > cutoff).ToList();",
+      "suggestion": "Keep a Queue<SqueakEntry> and dequeue while Peek().Timestamp <= cutoff."
+    },
+    {
+      "id": "eventbus-hostile-wrappers-decorator",
+      "tier": "plan",
+      "category": "design-pattern",
+      "title": "Unify hostile-transport wrappers as IEventBus decorators",
+      "files": [
+        "src/DuckNet.EventBus/DuplicatingBus.cs",
+        "src/DuckNet.EventBus/ReorderingBus.cs"
+      ],
+      "detail": "Both hostile wrappers re-implement the same delegating shape around IEventBus with copy-pasted forwarding. A shared decorator base would make each wrapper a single override and make composing hostility modes explicit.",
+      "effort": "large",
+      "risk": "medium",
+      "proposed_issues": [
+        {
+          "title": "Extract a delegating EventBusDecorator base",
+          "body": "## Motivation\nDuplicatingBus and ReorderingBus repeat the same IEventBus forwarding.\n\n## Scope\nAdd an abstract decorator that forwards all IEventBus members; no behavior change.\n\n## Acceptance\nExisting kernel tests pass unchanged.",
+          "labels": ["refactoring"],
+          "depends_on": []
+        },
+        {
+          "title": "Port DuplicatingBus and ReorderingBus onto the decorator base",
+          "body": "## Motivation\nRemove the duplicated forwarding once the base exists.\n\n## Scope\nEach wrapper overrides only the member it perturbs.\n\n## Acceptance\nHostile-transport demo (/mis-demo) behaves identically.",
+          "labels": ["refactoring"],
+          "depends_on": [0]
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "LogTailFeeder's polling loop could use PeriodicTimer, but the current Task.Delay is equally clear — not worth a finding."
+  ]
+}

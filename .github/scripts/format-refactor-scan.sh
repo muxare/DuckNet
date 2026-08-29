@@ -70,7 +70,7 @@ if run_url:
 lines.extend(
     [
         "",
-        "Advisory only — not a merge gate. Plan-tier `proposed_issues` are drafts; nothing is created from them.",
+        "Advisory only — not a merge gate. CI creates or updates one GitHub issue per held patch finding and per plan-tier `proposed_issues` item.",
     ]
 )
 
@@ -111,7 +111,7 @@ if held:
                 lines.extend(["", "Suggestion:", "", fence(item["suggestion"])])
         drafts = item.get("proposed_issues") or []
         if drafts:
-            lines.extend(["", "**Draft issues (not created):**", ""])
+            lines.extend(["", "**Tasks (CI creates or updates issues):**", ""])
             for i, draft in enumerate(drafts):
                 deps = [d + 1 for d in (draft.get("depends_on") or [])]
                 dep = f" (depends on {deps})" if deps else ""

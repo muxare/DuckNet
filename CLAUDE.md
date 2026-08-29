@@ -92,9 +92,11 @@ Mention `@claude` on any PR or issue to ask questions interactively
 
 `refactor-scan.yml` is weekly (Monday) + `workflow_dispatch`. Whole-tree, not
 a PR diff: Sonnet finds opportunities, a second Sonnet session scores
-confidence, `jq` merges. One sticky GitHub issue, updated in place. Advisory —
-not a merge gate, not on PRs. `proposed_issues` are drafts; nothing is created
-from them. Local: `/refactor-scan` or `bash .github/scripts/run-refactor-scan.sh`.
+confidence, `jq` merges. CI creates or updates one GitHub issue per held
+patch finding and per plan-tier `proposed_issues` item (dedupe open issues by
+scan marker, then title; skip if a matching `refactor-scan` issue is already
+closed). Advisory — not a merge gate, not on PRs. Local: `/refactor-scan` or
+`bash .github/scripts/run-refactor-scan.sh` (prints JSON; does not open issues).
 
 Both review and the refactor scan need the repo secret `CLAUDE_CODE_OAUTH_TOKEN`
 (`claude setup-token`).

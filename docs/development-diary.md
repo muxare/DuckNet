@@ -2,6 +2,33 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-29 — Refactor scan opens per-task GitHub issues
+
+### What changed
+The weekly scan no longer maintains one sticky "Refactor scan" rollup. Held patch findings and plan-tier `proposed_issues` each become (or update) a GitHub issue. Matching: scan marker in the body, then case-insensitive title among open issues. Closed `refactor-scan` issues are skipped. Human text outside the generated markers is kept. The old rollup is closed on the next CI run. Local `/refactor-scan` still does not open issues.
+
+### Architecture impact
+```mermaid
+flowchart TD
+  T[schedule / dispatch] --> G{SHA already scanned?}
+  G -->|schedule and yes| Skip[skip]
+  G -->|no| S[scan Sonnet]
+  S --> V[verify Sonnet]
+  V --> M[jq merge]
+  M --> P[plan-refactor-issues.py]
+  P --> O[open issues]
+  P --> C[closed refactor-scan]
+  O --> A{marker or title?}
+  A -->|yes| U[update generated block]
+  A -->|no| N[create]
+  C --> K[skip]
+```
+
+### How to test
+- `bash .github/scripts/test-refactor-scan.sh` — merge, format, plan create/update/skip
+- Actions → Claude refactor scan → Run workflow
+- Expect one issue per task, labels `refactoring` + `refactor-scan`; re-run updates the same issues
+
 ## 2026-08-29 — Hot-partition lag test no longer folds in publish time
 
 ### What changed

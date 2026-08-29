@@ -25,8 +25,8 @@ step work, not refactoring.
   the change is too large for one blind PR. Must include `proposed_issues`:
   at least two ordered draft issues (title; markdown body with motivation,
   scope, and acceptance criteria; labels always including `refactoring`;
-  `depends_on` as indices into the same array), so a human and an agent can
-  reason about where to start. Nothing is created on GitHub from these.
+  `depends_on` as indices into the same array), so CI can open or update
+  one GitHub issue per item. Do not invent GitHub issue numbers.
 
 ## What to look for
 
@@ -97,3 +97,6 @@ Return **only** the structured object required by the schema:
 - Never quote code you did not read, and never invent file paths.
 - A plan finding without concrete evidence in the code is a `note`, not a
   finding.
+- `proposed_issues` are the unit of GitHub work: CI creates or updates one
+  issue per item (deduped against open issues). Do not write "do not create
+  issues" into the drafts.

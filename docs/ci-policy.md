@@ -6,7 +6,7 @@ Live behavior is in [`claude-review.yml`](../.github/workflows/claude-review.yml
 
 - **Required to merge:** `ci.yml` (`build-and-test`). Tests decide.
 - **Advisory (PR):** `claude-review.yml` (triage → architecture/security if requested → one aggregated comment). Verdict never fails the workflow. Jobs fail only on infrastructure (missing `CLAUDE_CODE_OAUTH_TOKEN`).
-- **Advisory (tree):** `refactor-scan.yml` — weekly Monday + `workflow_dispatch`. Two isolated Sonnet sessions (scan, then independent confidence) merged by `jq`. One sticky GitHub issue, updated in place. Not on `pull_request` (step PRs must not pick up unrelated refactors; ~`$1.50` per run). `proposed_issues` are drafts; nothing is created from them. Scheduled runs skip if HEAD SHA is already on the issue.
+- **Advisory (tree):** `refactor-scan.yml` — weekly Monday + `workflow_dispatch`. Two isolated Sonnet sessions (scan, then independent confidence) merged by `jq`. One GitHub issue per held patch finding and per plan-tier `proposed_issues` item; later runs update matching open issues (scan marker, then title) and skip closed `refactor-scan` issues. Not on `pull_request` (step PRs must not pick up unrelated refactors; ~`$1.50` per run). Scheduled runs skip if HEAD SHA already has a successful scan run. Local `/refactor-scan` does not open issues.
 - **Skipped:** draft PRs, fork PRs, docs-only diffs (`docs/**`, `*.md`, `*.html`).
 - **Interactive:** `@claude` via [`claude.yml`](../.github/workflows/claude.yml) (OWNER/MEMBER/COLLABORATOR only).
 - Do not make Claude a required status check until the loop is boringly stable.
@@ -59,7 +59,7 @@ ReviewFlow-as-a-platform. Interesting elsewhere; not required for DuckNet.
 - YAML `review:` product config (per-reviewer `minimum-risk`, `max-total-budget`, `max-parallel-reviewers`)
 - Extra specialists: testing, performance, domain, docs, maintainability (beyond architecture/security/code)
 - Confidence-based discard and a “human review” section (schema already allows `confidence`; aggregator ignores it)
-- Auto GitHub issues / ADO work items from findings (`proposed_issues` stay drafts on the sticky issue)
+- ADO work items from findings (GitHub issues from the refactor scan are live)
 - Review memory across PRs (recurring problems, known exceptions)
 - Anthropic `code-review` plugin in CI (interactive plugin; known silent-failure risk)
 - Making Claude a required merge check

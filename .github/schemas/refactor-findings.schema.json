@@ -89,7 +89,7 @@
               "required": ["title", "body", "labels", "depends_on"],
               "additionalProperties": false
             },
-            "description": "plan tier: ordered decomposition of the refactoring into draft GitHub issues. Nothing is created on GitHub from this — it is input to a human+agent triage."
+            "description": "plan tier: ordered decomposition into GitHub issues. CI creates or updates one issue per item; match by scan marker then title."
           }
         },
         "required": ["id", "tier", "category", "title", "files", "detail", "effort", "risk"],

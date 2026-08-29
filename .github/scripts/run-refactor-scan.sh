@@ -8,6 +8,7 @@
 # usage: run-refactor-scan.sh [OUTDIR]      (default /tmp/refactor-scan)
 # Final result: OUTDIR/findings-final.json
 # Issue markdown: format-refactor-scan.sh FINDINGS.json SHA [RUN_URL]
+# Issue actions:  plan-refactor-issues.py FINDINGS.json EXISTING.json SHA [RUN_URL]
 # env overrides: SCAN_MODEL / VERIFY_MODEL (sonnet), SCAN_BUDGET_USD (1.00),
 #   VERIFY_BUDGET_USD (0.50), SCAN_MAX_TURNS (40), VERIFY_MAX_TURNS (30)
 # Nested scripts are invoked with bash so GitHub Actions does not depend on +x.

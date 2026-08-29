@@ -1,5 +1,6 @@
 using DuckNet.EventBus;
 using DuckNet.Kernel.Persistence;
+using DuckNet.Kernel.Transport;
 
 namespace DuckNet.Kernel.Producer;
 
@@ -13,29 +14,19 @@ public sealed class OutboxDispatcher
     private readonly OutboxStore _outbox;
     private readonly EventLogStore _log;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly PollingLoop _pollingLoop;
 
     public OutboxDispatcher(KernelDb db, OutboxStore outbox, EventLogStore log)
     {
         _db = db;
         _outbox = outbox;
         _log = log;
+        _pollingLoop = new PollingLoop(DispatchAvailableAsync, TimeSpan.FromMilliseconds(10));
     }
 
-    public async Task RunAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            await DispatchAvailableAsync(cancellationToken).ConfigureAwait(false);
-            await Task.Delay(10, cancellationToken).ConfigureAwait(false);
-        }
-    }
+    public Task RunAsync(CancellationToken cancellationToken) => _pollingLoop.RunAsync(cancellationToken);
 
-    public async Task DrainAsync(CancellationToken cancellationToken = default)
-    {
-        while (await DispatchAvailableAsync(cancellationToken).ConfigureAwait(false) > 0)
-        {
-        }
-    }
+    public Task DrainAsync(CancellationToken cancellationToken = default) => _pollingLoop.DrainAsync(cancellationToken);
 
     private async Task<int> DispatchAvailableAsync(CancellationToken cancellationToken)
     {

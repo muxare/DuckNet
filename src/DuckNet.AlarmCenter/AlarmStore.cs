@@ -65,7 +65,7 @@ public sealed class AlarmStore
         InsertWindow(connection, tx, squeaked.DuckId, envelope.EventId, squeaked.OccurredAt);
         var windowStart = squeaked.OccurredAt - TimeSpan.FromSeconds(_windowSeconds);
         TrimWindow(connection, tx, squeaked.DuckId, windowStart);
-        var count = CountWindow(connection, tx, squeaked.DuckId, windowStart);
+        var count = CountWindow(connection, tx, squeaked.DuckId);
         var (active, lastAlarmSeq) = ReadState(connection, tx, squeaked.DuckId);
 
         if (count > _threshold && !active)
@@ -153,17 +153,15 @@ public sealed class AlarmStore
     private static long CountWindow(
         SqliteConnection connection,
         SqliteTransaction tx,
-        string duckId,
-        DateTimeOffset windowStart)
+        string duckId)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = """
             SELECT COUNT(*) FROM squeak_window
-            WHERE duck_id = $d AND occurred_at >= $at
+            WHERE duck_id = $d
             """;
         cmd.Parameters.AddWithValue("$d", duckId);
-        cmd.Parameters.AddWithValue("$at", windowStart.ToString("O"));
         return (long)cmd.ExecuteScalar()!;
     }
 

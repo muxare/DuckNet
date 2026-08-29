@@ -140,20 +140,24 @@ public class HotPartitionTests
             handleDelay: TimeSpan.FromMilliseconds(8),
             shardCapacity: 64);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var run = counter.RunAsync(cts.Token);
-        var at = DateTimeOffset.UtcNow;
+        // Enqueue the burst before the consumer starts. Lag is OccurredAt→handle;
+        // publishing while workers run folds publish time (and sibling-test CPU)
+        // into the quiet key, so sharded vs starved can miss the /2 bar on CI.
         const int hotCount = 30;
+        var at = DateTimeOffset.UtcNow;
         for (var i = 1; i <= hotCount; i++)
         {
             await bus.PublishAsync(
                 SqueakedEnvelope.Create(new Squeaked(hot, i, at)),
-                cts.Token);
+                CancellationToken.None);
         }
 
         await bus.PublishAsync(
             SqueakedEnvelope.Create(new Squeaked(quiet, 1, at)),
-            cts.Token);
+            CancellationToken.None);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = counter.RunAsync(cts.Token);
 
         await ConsumerWait.UntilCountAsync(counter, expected: hotCount + 1, cts.Token);
         var snapshot = counter.ShardSnapshot;

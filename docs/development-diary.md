@@ -2,6 +2,27 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-29 — Hot-partition lag test no longer folds in publish time
+
+### What changed
+`RunBurstAsync` now enqueues the hot burst on `InMemoryEventBus` *before* `SqueakCounter.RunAsync`. Lag is `UtcNow - OccurredAt` at handle time; publishing while workers (and other test assemblies) run made the quiet key look slow even on its own shard. CI failed `sharded quiet 176ms vs starved 257ms` against `starved / 2`.
+
+### Architecture impact
+```mermaid
+sequenceDiagram
+  participant T as test
+  participant B as InMemoryEventBus
+  participant P as ShardWorkerPool
+  T->>B: 30 hot + 1 quiet (same OccurredAt)
+  T->>P: RunAsync
+  P->>P: shard 1 handles quiet in ~handleDelay
+  P->>P: shard 0 drains hot serially
+```
+
+### How to test
+- `dotnet test tests/DuckNet.Kernel.Tests --filter HotPartition`
+- `dotnet test DuckNet.slnx -c Release` (three assemblies in parallel, as CI)
+
 ## 2026-08-29 — Refactor scan as a GitHub workflow
 
 ### What changed

@@ -14,6 +14,7 @@ public sealed class LogTailFeeder
     private readonly EventLogStore _log;
     private readonly IEventBus _eventBus;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly PollingLoop _pollingLoop;
     private long _fedOffset;
 
     public LogTailFeeder(KernelDb db, EventLogStore log, IEventBus eventBus, long startOffset = 0)
@@ -22,25 +23,14 @@ public sealed class LogTailFeeder
         _log = log;
         _eventBus = eventBus;
         _fedOffset = startOffset;
+        _pollingLoop = new PollingLoop(cancellationToken => FeedBatchAsync(cancellationToken), TimeSpan.FromMilliseconds(10));
     }
 
     public long FedOffset => _fedOffset;
 
-    public async Task RunAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            await FeedBatchAsync(cancellationToken).ConfigureAwait(false);
-            await Task.Delay(10, cancellationToken).ConfigureAwait(false);
-        }
-    }
+    public Task RunAsync(CancellationToken cancellationToken) => _pollingLoop.RunAsync(cancellationToken);
 
-    public async Task CatchUpAsync(CancellationToken cancellationToken = default)
-    {
-        while (await FeedBatchAsync(cancellationToken).ConfigureAwait(false) > 0)
-        {
-        }
-    }
+    public Task CatchUpAsync(CancellationToken cancellationToken = default) => _pollingLoop.CatchUpAsync(cancellationToken);
 
     public async Task<int> FeedBatchAsync(CancellationToken cancellationToken = default, int limit = 50)
     {

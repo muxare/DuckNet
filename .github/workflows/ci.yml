@@ -15,6 +15,9 @@ jobs:
       - name: ReviewFlow aggregate fixtures
         run: bash .github/scripts/test-aggregate-review.sh
 
+      - name: Refactor-scan fixtures
+        run: bash .github/scripts/test-refactor-scan.sh
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:

@@ -1,11 +1,12 @@
 # CI and ReviewFlow — policy and later work
 
-Live behavior is in [`claude-review.yml`](../.github/workflows/claude-review.yml) and [`ci.yml`](../.github/workflows/ci.yml). This file is the backlog after the ReviewFlow MVP: what to do next, what to leave parked.
+Live behavior is in [`claude-review.yml`](../.github/workflows/claude-review.yml), [`refactor-scan.yml`](../.github/workflows/refactor-scan.yml), and [`ci.yml`](../.github/workflows/ci.yml). This file is the backlog after the ReviewFlow MVP: what to do next, what to leave parked.
 
 ## Current policy
 
 - **Required to merge:** `ci.yml` (`build-and-test`). Tests decide.
-- **Advisory:** `claude-review.yml` (triage → architecture/security if requested → one aggregated comment). Verdict never fails the workflow. Jobs fail only on infrastructure (missing `CLAUDE_CODE_OAUTH_TOKEN`).
+- **Advisory (PR):** `claude-review.yml` (triage → architecture/security if requested → one aggregated comment). Verdict never fails the workflow. Jobs fail only on infrastructure (missing `CLAUDE_CODE_OAUTH_TOKEN`).
+- **Advisory (tree):** `refactor-scan.yml` — weekly Monday + `workflow_dispatch`. Two isolated Sonnet sessions (scan, then independent confidence) merged by `jq`. One sticky GitHub issue, updated in place. Not on `pull_request` (step PRs must not pick up unrelated refactors; ~`$1.50` per run). `proposed_issues` are drafts; nothing is created from them. Scheduled runs skip if HEAD SHA is already on the issue.
 - **Skipped:** draft PRs, fork PRs, docs-only diffs (`docs/**`, `*.md`, `*.html`).
 - **Interactive:** `@claude` via [`claude.yml`](../.github/workflows/claude.yml) (OWNER/MEMBER/COLLABORATOR only).
 - Do not make Claude a required status check until the loop is boringly stable.
@@ -27,6 +28,7 @@ Do these in DuckNet. Order is a suggestion, not a gate.
 
 ### C — Nightly Claude audit
 
+- Not the refactor scan — that is live (`refactor-scan.yml`). This item is architecture/docs drift.
 - Reuse `review-state.json` for a **whole-tree** pass (PR review is diff-only).
 - Architecture drift vs the five `CLAUDE.md` rules; docs vs as-built (`docs/architecture/step-N.md`).
 - Optional: contract upcast checklist (`ducknet-event-contract`); CCA-F hygiene (`CLAUDE.md` vs folders/skills/hooks).
@@ -57,7 +59,7 @@ ReviewFlow-as-a-platform. Interesting elsewhere; not required for DuckNet.
 - YAML `review:` product config (per-reviewer `minimum-risk`, `max-total-budget`, `max-parallel-reviewers`)
 - Extra specialists: testing, performance, domain, docs, maintainability (beyond architecture/security/code)
 - Confidence-based discard and a “human review” section (schema already allows `confidence`; aggregator ignores it)
-- Auto GitHub issues / ADO work items from findings
+- Auto GitHub issues / ADO work items from findings (`proposed_issues` stay drafts on the sticky issue)
 - Review memory across PRs (recurring problems, known exceptions)
 - Anthropic `code-review` plugin in CI (interactive plugin; known silent-failure risk)
 - Making Claude a required merge check

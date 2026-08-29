@@ -51,7 +51,7 @@ src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox; upc
 src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db; DLQ; GET /metrics
 tests/                        # kernel + AlarmCenter + DashboardCenter
 infra/docker/                 # one Dockerfile per Center
-.github/workflows/            # ci.yml, claude-review.yml, deploy-center.yml
+.github/workflows/            # ci.yml, claude-review.yml, refactor-scan.yml, deploy-center.yml
 ```
 
 ## Build & test
@@ -88,7 +88,16 @@ invoked until this loop is boring. Later and parked work: [docs/ci-policy.md](do
 Mention `@claude` on any PR or issue to ask questions interactively
 (`claude.yml`).
 
-Requires the repo secret `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`).
+## Refactor scan
+
+`refactor-scan.yml` is weekly (Monday) + `workflow_dispatch`. Whole-tree, not
+a PR diff: Sonnet finds opportunities, a second Sonnet session scores
+confidence, `jq` merges. One sticky GitHub issue, updated in place. Advisory —
+not a merge gate, not on PRs. `proposed_issues` are drafts; nothing is created
+from them. Local: `bash .github/scripts/run-refactor-scan.sh`.
+
+Both review and the refactor scan need the repo secret `CLAUDE_CODE_OAUTH_TOKEN`
+(`claude setup-token`).
 
 ## Agent automation opportunities (CCA-F)
 

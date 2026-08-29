@@ -2,6 +2,35 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-29 — Refactor scan as a GitHub workflow
+
+### What changed
+Whole-tree refactor scan is now `refactor-scan.yml`: weekly Monday + `workflow_dispatch`. Not on PRs. Two isolated Sonnet sessions (scan, then independent confidence) merged by `jq`; one sticky GitHub issue. `ci.yml` still gates merge. Fixture tests cover merge + issue markdown without Claude.
+
+### Architecture impact
+```mermaid
+flowchart TD
+  T[schedule / dispatch] --> G{SHA already on issue?}
+  G -->|schedule and yes| Skip[skip]
+  G -->|no| S[scan Sonnet]
+  S --> V[verify Sonnet]
+  V --> M[jq merge]
+  M --> I[sticky issue]
+  PR[pull_request] --> RF[claude-review.yml]
+  CI[ci.yml] --> Merge[merge gate]
+```
+
+### How to test
+- `bash .github/scripts/test-refactor-scan.sh` — merge, missing assessment, format, low confidence, empty (no Claude)
+- Actions → Claude refactor scan → Run workflow (needs `CLAUDE_CODE_OAUTH_TOKEN`)
+- Expect one issue titled "Refactor scan" with marker `ducknet-refactor-scan`; later runs update it
+- Missing token: job fails (infra); findings never fail the workflow
+
+### Follow-ups
+**CCA-F (needs OK):** project command `.claude/commands/refactor-scan.md` (`/refactor-scan`) wrapping `run-refactor-scan.sh` for a local run. Human-triggered; the workflow already covers the scheduled path.
+
+**Deferred:** nightly architecture/docs audit (ci-policy C) is a different whole-tree pass — not this scan.
+
 ## 2026-08-28 — Step 8: backpressure + hot partitions
 
 ### What changed

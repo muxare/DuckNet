@@ -13,40 +13,22 @@ public sealed class RemoteOutboxDispatcher
     private readonly OutboxStore _outbox;
     private readonly HttpLogClient _client;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly PollingLoop _pollingLoop;
 
     public RemoteOutboxDispatcher(KernelDb db, OutboxStore outbox, HttpLogClient client)
     {
         _db = db;
         _outbox = outbox;
         _client = client;
+        _pollingLoop = new PollingLoop(
+            DispatchAvailableAsync,
+            TimeSpan.FromMilliseconds(20),
+            isTransient: ex => ex is HttpRequestException);
     }
 
-    public async Task RunAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                await DispatchAvailableAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (HttpRequestException)
-            {
-            }
-            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
+    public Task RunAsync(CancellationToken cancellationToken) => _pollingLoop.RunAsync(cancellationToken);
 
-            await Task.Delay(20, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    public async Task DrainAsync(CancellationToken cancellationToken = default)
-    {
-        while (await DispatchAvailableAsync(cancellationToken).ConfigureAwait(false) > 0)
-        {
-        }
-    }
+    public Task DrainAsync(CancellationToken cancellationToken = default) => _pollingLoop.DrainAsync(cancellationToken);
 
     private async Task<int> DispatchAvailableAsync(CancellationToken cancellationToken)
     {

@@ -11,6 +11,7 @@ public sealed class HttpLogTailFeeder
     private readonly HttpLogClient _client;
     private readonly IEventBus _eventBus;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly PollingLoop _pollingLoop;
     private long _fedOffset;
 
     public HttpLogTailFeeder(HttpLogClient client, IEventBus eventBus, long startOffset = 0)
@@ -18,6 +19,10 @@ public sealed class HttpLogTailFeeder
         _client = client;
         _eventBus = eventBus;
         _fedOffset = startOffset;
+        _pollingLoop = new PollingLoop(
+            cancellationToken => FeedBatchAsync(cancellationToken),
+            TimeSpan.FromMilliseconds(20),
+            isTransient: ex => ex is HttpRequestException or HttpIOException);
     }
 
     public long FedOffset => _fedOffset;
@@ -37,36 +42,9 @@ public sealed class HttpLogTailFeeder
         }
     }
 
-    public async Task RunAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                await FeedBatchAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (HttpRequestException)
-            {
-                // Telemetry may be restarting; retry. This is the bus, not a business call.
-            }
-            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (HttpIOException)
-            {
-            }
+    public Task RunAsync(CancellationToken cancellationToken) => _pollingLoop.RunAsync(cancellationToken);
 
-            await Task.Delay(20, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    public async Task CatchUpAsync(CancellationToken cancellationToken = default)
-    {
-        while (await FeedBatchAsync(cancellationToken).ConfigureAwait(false) > 0)
-        {
-        }
-    }
+    public Task CatchUpAsync(CancellationToken cancellationToken = default) => _pollingLoop.CatchUpAsync(cancellationToken);
 
     public async Task<int> FeedBatchAsync(CancellationToken cancellationToken = default, int limit = 50)
     {

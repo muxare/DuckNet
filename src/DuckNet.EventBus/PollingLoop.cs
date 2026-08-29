@@ -1,4 +1,4 @@
-namespace DuckNet.Kernel.Transport;
+namespace DuckNet.EventBus;
 
 /// <summary>
 /// Generic gate + fetch-batch + poll-loop scaffold shared by feeders and outbox

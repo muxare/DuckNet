@@ -1,6 +1,5 @@
 using DuckNet.EventBus;
 using DuckNet.Kernel.Persistence;
-using DuckNet.Kernel.Transport;
 
 namespace DuckNet.Kernel.Producer;
 

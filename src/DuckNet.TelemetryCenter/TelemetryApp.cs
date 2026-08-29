@@ -58,7 +58,7 @@ public static class TelemetryApp
             options.SerializerOptions.PropertyNamingPolicy = EnvelopeJson.Options.PropertyNamingPolicy;
             options.SerializerOptions.PropertyNameCaseInsensitive = true;
         });
-        builder.Services.AddHostedService<OutboxDispatcherHostedService>();
+        builder.Services.AddHostedService(sp => new RunLoopHostedService(sp.GetRequiredService<OutboxDispatcher>().RunAsync));
         if (opts.RunSimulator)
         {
             builder.Services.AddHostedService<SimulatorHostedService>();

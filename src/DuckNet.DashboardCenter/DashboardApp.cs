@@ -81,8 +81,8 @@ public static class DashboardApp
             handleDelay: TimeSpan.FromMilliseconds(opts.HandleDelayMs),
             shardCapacity: opts.ShardCapacity));
 
-        builder.Services.AddHostedService<DashboardFeederHostedService>();
-        builder.Services.AddHostedService<DashboardConsumerHostedService>();
+        builder.Services.AddHostedService(sp => new RunLoopHostedService(sp.GetRequiredService<HttpLogTailFeeder>().RunAsync));
+        builder.Services.AddHostedService(sp => new RunLoopHostedService(sp.GetRequiredService<DashboardConsumer>().RunAsync));
 
         var app = builder.Build();
         if (wwwroot is not null)

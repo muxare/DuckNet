@@ -82,9 +82,9 @@ public static class AlarmApp
             outbox,
             sp.GetRequiredService<HttpLogClient>()));
 
-        builder.Services.AddHostedService<AlarmFeederHostedService>();
-        builder.Services.AddHostedService<AlarmConsumerHostedService>();
-        builder.Services.AddHostedService<RemoteOutboxDispatcherHostedService>();
+        builder.Services.AddHostedService(sp => new RunLoopHostedService(sp.GetRequiredService<HttpLogTailFeeder>().RunAsync));
+        builder.Services.AddHostedService(sp => new RunLoopHostedService(sp.GetRequiredService<AlarmConsumer>().RunAsync));
+        builder.Services.AddHostedService(sp => new RunLoopHostedService(sp.GetRequiredService<RemoteOutboxDispatcher>().RunAsync));
 
         var app = builder.Build();
         app.MapGet("/", () => Results.Redirect("/alarms"));

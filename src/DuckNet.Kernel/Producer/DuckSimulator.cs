@@ -11,6 +11,7 @@ public sealed class DuckSimulator
     private readonly Random _random;
     private readonly string? _loudDuckId;
     private readonly int _loudWeight;
+    private readonly string[] _otherDuckIds;
 
     public DuckSimulator(
         TransactionalPublisher publisher,
@@ -33,6 +34,12 @@ public sealed class DuckSimulator
         _random = seed.HasValue ? new Random(seed.Value) : Random.Shared;
         _loudDuckId = string.IsNullOrWhiteSpace(loudDuckId) ? null : loudDuckId;
         _loudWeight = loudWeight;
+        _otherDuckIds = _loudDuckId is null
+            ? []
+            : Enumerable.Range(1, duckCount)
+                .Select(i => $"duck-{i}")
+                .Where(id => !string.Equals(id, _loudDuckId, StringComparison.Ordinal))
+                .ToArray();
     }
 
     public async Task RunAsync(TimeSpan duration, CancellationToken cancellationToken)
@@ -67,39 +74,8 @@ public sealed class DuckSimulator
             return $"duck-{_random.Next(1, _duckCount + 1)}";
         }
 
-        var otherCount = 0;
-        for (var i = 1; i <= _duckCount; i++)
-        {
-            if (!string.Equals($"duck-{i}", _loudDuckId, StringComparison.Ordinal))
-            {
-                otherCount++;
-            }
-        }
-
-        var roll = _random.Next(_loudWeight + otherCount);
-        if (roll < _loudWeight)
-        {
-            return _loudDuckId;
-        }
-
-        var skip = roll - _loudWeight;
-        for (var i = 1; i <= _duckCount; i++)
-        {
-            var id = $"duck-{i}";
-            if (string.Equals(id, _loudDuckId, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (skip == 0)
-            {
-                return id;
-            }
-
-            skip--;
-        }
-
-        return _loudDuckId;
+        var roll = _random.Next(_loudWeight + _otherDuckIds.Length);
+        return roll < _loudWeight ? _loudDuckId : _otherDuckIds[roll - _loudWeight];
     }
 
     private double NextVolumeDb() => 50 + (_random.NextDouble() * 40);

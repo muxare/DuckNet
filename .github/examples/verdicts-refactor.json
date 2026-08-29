@@ -1,0 +1,15 @@
+{
+  "assessments": [
+    {
+      "id": "alarmcenter-ratewindow-linq-allocation",
+      "confidence": 0.85,
+      "rationale": "Snippet found verbatim in RateWindow.cs; the queue swap preserves the cutoff semantics. It is on the consumer hot path, though window sizes are small, so the benefit is modest."
+    },
+    {
+      "id": "eventbus-hostile-wrappers-decorator",
+      "confidence": 0.6,
+      "rationale": "Both wrappers do share the delegating shape, but they differ in constructor state and RNG seeding; issue 2 underestimates that. The decomposition order is sound."
+    }
+  ],
+  "notes": []
+}

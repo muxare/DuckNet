@@ -1,4 +1,4 @@
-using DuckNet.Kernel.Transport;
+using DuckNet.EventBus;
 
 namespace DuckNet.Kernel.Tests;
 

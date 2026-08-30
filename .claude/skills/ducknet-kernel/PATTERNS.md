@@ -81,6 +81,12 @@ Simulator creates a producer span and stamps `EventEnvelope.TraceId` with the W3
 
 Test: `dotnet test --filter Tracing`. Demo: Aspire **Traces**, filter `handle.Squeaked` (not `DuckNet.*`).
 
+## Step 10 — Billing saga (no distributed transaction)
+
+`AlarmRaised` → Billing inserts `billing_sagas` `Reserved` (PK = `EventId`) and publishes `FeeReserved`. `AlarmResolved` before `expires_at` → `Released` + `FeeReleased` reason `AlarmResolved`. Timeout worker: still `Reserved` after the timeout → `Expired` + `FeeReleased` reason `Timeout`. Duplicate `AlarmRaised` is inbox + PK, not a lock. AlarmCenter and BillingCenter never call each other.
+
+Test: `dotnet test --filter FullyQualifiedName~Billing`. Demo: Aspire `GET /sagas`; fast `POST /alarms/{duckId}/resolve`; slow wait `SAGA_TIMEOUT_SECONDS` (AppHost 15s).
+
 ## Anti-patterns
 
 - Parsing “done” from log text instead of counts / test assertions.

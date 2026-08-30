@@ -14,11 +14,13 @@ public static class DuckNetTracing
     public const string TelemetrySourceName = "DuckNet.Telemetry";
     public const string AlarmSourceName = "DuckNet.Alarm";
     public const string DashboardSourceName = "DuckNet.Dashboard";
+    public const string BillingSourceName = "DuckNet.Billing";
     public const string KernelSourceName = "DuckNet.Kernel";
 
     public static readonly ActivitySource Telemetry = new(TelemetrySourceName);
     public static readonly ActivitySource Alarm = new(AlarmSourceName);
     public static readonly ActivitySource Dashboard = new(DashboardSourceName);
+    public static readonly ActivitySource Billing = new(BillingSourceName);
     public static readonly ActivitySource Kernel = new(KernelSourceName);
 
     public static readonly string[] SourceNames =
@@ -26,6 +28,7 @@ public static class DuckNetTracing
         TelemetrySourceName,
         AlarmSourceName,
         DashboardSourceName,
+        BillingSourceName,
         KernelSourceName
     ];
 

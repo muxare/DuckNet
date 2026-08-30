@@ -47,3 +47,4 @@ jobs:
           docker build -f infra/docker/DuckNet.TelemetryCenter/Dockerfile -t ducknet-telemetry:ci .
           docker build -f infra/docker/DuckNet.AlarmCenter/Dockerfile -t ducknet-alarm:ci .
           docker build -f infra/docker/DuckNet.DashboardCenter/Dockerfile -t ducknet-dashboard:ci .
+          docker build -f infra/docker/DuckNet.BillingCenter/Dockerfile -t ducknet-billing:ci .

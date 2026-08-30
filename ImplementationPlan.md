@@ -565,9 +565,9 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] Happy path: alarm → fee reserved → alarm resolved → fee released.
-- [ ] Timeout path: fee released after 5 min without resolve.
-- [ ] AlarmCenter and BillingCenter never call each other.
+- [x] Happy path: alarm → fee reserved → alarm resolved → fee released.
+- [x] Timeout path: fee released after 5 min without resolve.
+- [x] AlarmCenter and BillingCenter never call each other.
 
 **Demo script:** Fast resolve vs slow resolve side-by-side.
 

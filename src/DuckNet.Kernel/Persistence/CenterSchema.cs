@@ -108,7 +108,8 @@ public static class CenterSchema
         CREATE TABLE IF NOT EXISTS duck_alarm_state (
           duck_id TEXT PRIMARY KEY,
           active INTEGER NOT NULL,
-          last_seq INTEGER NOT NULL
+          last_seq INTEGER NOT NULL,
+          last_alarm_event_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS alarms (
@@ -140,6 +141,44 @@ public static class CenterSchema
           count INTEGER NOT NULL,
           volume_db REAL,
           PRIMARY KEY (duck_id, hour_utc)
+        );
+        """ + DeadLetterQueue;
+
+    public const string Billing = """
+        CREATE TABLE IF NOT EXISTS outbox (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          published_at TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS outbox_unpublished
+          ON outbox (id) WHERE published_at IS NULL;
+
+        CREATE TABLE IF NOT EXISTS consumer_offsets (
+          consumer_group TEXT PRIMARY KEY,
+          last_offset INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS inbox (
+          consumer_group TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          processed_at TEXT NOT NULL,
+          PRIMARY KEY (consumer_group, event_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS duck_progress (
+          duck_id TEXT PRIMARY KEY,
+          last_seq INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS billing_sagas (
+          alarm_id TEXT PRIMARY KEY,
+          duck_id TEXT NOT NULL,
+          state TEXT NOT NULL,
+          amount_cents INTEGER NOT NULL,
+          reserved_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL
         );
         """ + DeadLetterQueue;
 }

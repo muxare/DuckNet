@@ -11,6 +11,7 @@ on:
           - telemetry
           - alarm
           - dashboard
+          - billing
           - all
       environment:
         description: Target environment
@@ -26,6 +27,7 @@ on:
       - "src/DuckNet.TelemetryCenter/**"
       - "src/DuckNet.AlarmCenter/**"
       - "src/DuckNet.DashboardCenter/**"
+      - "src/DuckNet.BillingCenter/**"
       - "src/DuckNet.Contracts/**"
       - "src/DuckNet.EventBus/**"
       - "src/DuckNet.ServiceDefaults/**"
@@ -51,7 +53,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             CENTER="${{ inputs.center }}"
             if [ "$CENTER" = "all" ]; then
-              echo 'centers=["telemetry","alarm","dashboard"]' >> "$GITHUB_OUTPUT"
+              echo 'centers=["telemetry","alarm","dashboard","billing"]' >> "$GITHUB_OUTPUT"
             else
               echo "centers=[\"$CENTER\"]" >> "$GITHUB_OUTPUT"
             fi
@@ -61,11 +63,12 @@ jobs:
           CENTERS=()
           # Contract / bus change → every Center (shared wire types + upcasters).
           if git diff --name-only HEAD~1 HEAD | grep -Eq 'src/DuckNet.Contracts/|src/DuckNet.EventBus/|src/DuckNet.ServiceDefaults/'; then
-            CENTERS=(telemetry alarm dashboard)
+            CENTERS=(telemetry alarm dashboard billing)
           else
             git diff --name-only HEAD~1 HEAD | grep -q 'src/DuckNet.TelemetryCenter/' && CENTERS+=(telemetry)
             git diff --name-only HEAD~1 HEAD | grep -q 'src/DuckNet.AlarmCenter/' && CENTERS+=(alarm)
             git diff --name-only HEAD~1 HEAD | grep -q 'src/DuckNet.DashboardCenter/' && CENTERS+=(dashboard)
+            git diff --name-only HEAD~1 HEAD | grep -q 'src/DuckNet.BillingCenter/' && CENTERS+=(billing)
           fi
 
           if [ ${#CENTERS[@]} -eq 0 ]; then
@@ -96,6 +99,7 @@ jobs:
             telemetry) echo "dockerfile=infra/docker/DuckNet.TelemetryCenter/Dockerfile" >> "$GITHUB_OUTPUT" ;;
             alarm) echo "dockerfile=infra/docker/DuckNet.AlarmCenter/Dockerfile" >> "$GITHUB_OUTPUT" ;;
             dashboard) echo "dockerfile=infra/docker/DuckNet.DashboardCenter/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            billing) echo "dockerfile=infra/docker/DuckNet.BillingCenter/Dockerfile" >> "$GITHUB_OUTPUT" ;;
           esac
 
       - name: Build image

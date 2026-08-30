@@ -5,21 +5,22 @@ using DuckNet.Kernel.Consumer;
 using DuckNet.Kernel.Persistence;
 using System.Diagnostics;
 
-namespace DuckNet.AlarmCenter;
+namespace DuckNet.BillingCenter;
 
-public sealed class AlarmConsumer
+public sealed class BillingConsumer
 {
-    public const string ConsumerGroup = "alarm-center";
+    public const string ConsumerGroup = "billing-center";
 
     private readonly IEventBus _eventBus;
     private readonly KernelDb _db;
     private readonly Inbox _inbox;
     private readonly ConsumerOffsetStore _offsets;
     private readonly PerKeySequencer? _sequencer;
-    private readonly AlarmStore _alarms;
+    private readonly BillingStore _sagas;
     private readonly EventUpcasterPipeline _upcasters;
     private readonly RetryPipeline _retry;
     private readonly DeadLetterStore _deadLetters;
+    private readonly TimeProvider _time;
     private readonly TextWriter _output;
     private readonly TimeSpan _gapTimeout;
     private readonly int _shardCount;
@@ -27,23 +28,24 @@ public sealed class AlarmConsumer
     private readonly TimeSpan _handleDelay;
     private ShardWorkerPool? _pool;
     private long _handledCount;
-    private long _raisedCount;
-    private long _resolvedCount;
+    private long _reservedCount;
+    private long _releasedCount;
     private long _attemptCount;
     private long _deadLetteredCount;
 
-    public AlarmConsumer(
+    public BillingConsumer(
         IEventBus eventBus,
         KernelDb db,
         Inbox inbox,
         ConsumerOffsetStore offsets,
-        AlarmStore alarms,
+        BillingStore sagas,
         PerKeySequencer? sequencer,
         TextWriter? output = null,
         TimeSpan? gapTimeout = null,
         EventUpcasterPipeline? upcasters = null,
         RetryPipeline? retry = null,
         DeadLetterStore? deadLetters = null,
+        TimeProvider? time = null,
         int shardCount = PartitionShard.DefaultCount,
         TimeSpan? handleDelay = null,
         int shardCapacity = PartitionShard.DefaultCapacity)
@@ -52,13 +54,14 @@ public sealed class AlarmConsumer
         _db = db;
         _inbox = inbox;
         _offsets = offsets;
-        _alarms = alarms;
+        _sagas = sagas;
         _sequencer = sequencer;
         _output = output ?? Console.Out;
         _gapTimeout = gapTimeout ?? TimeSpan.FromSeconds(5);
         _upcasters = upcasters ?? EventUpcasterPipeline.Default;
         _retry = retry ?? new RetryPipeline();
         _deadLetters = deadLetters ?? new DeadLetterStore();
+        _time = time ?? TimeProvider.System;
         _shardCount = shardCount < 1 ? 1 : shardCount;
         _shardCapacity = shardCapacity < 1 ? PartitionShard.DefaultCapacity : shardCapacity;
         _handleDelay = handleDelay ?? TimeSpan.Zero;
@@ -66,9 +69,9 @@ public sealed class AlarmConsumer
 
     public long HandledCount => Interlocked.Read(ref _handledCount);
 
-    public long RaisedCount => Interlocked.Read(ref _raisedCount);
+    public long ReservedCount => Interlocked.Read(ref _reservedCount);
 
-    public long ResolvedCount => Interlocked.Read(ref _resolvedCount);
+    public long ReleasedCount => Interlocked.Read(ref _releasedCount);
 
     public long AttemptCount => Interlocked.Read(ref _attemptCount);
 
@@ -108,7 +111,7 @@ public sealed class AlarmConsumer
 
     private void HandleDispatched(EventEnvelope envelope)
     {
-        if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal))
+        if (!IsAlarmEvent(envelope.Type))
         {
             AdvanceOffset(envelope.LogOffset);
             return;
@@ -136,8 +139,8 @@ public sealed class AlarmConsumer
     private void HandleReady(EventEnvelope envelope)
     {
         using var activity = DuckNetTracing.StartFromEnvelope(
-            DuckNetTracing.Alarm,
-            "handle.Squeaked",
+            DuckNetTracing.Billing,
+            $"handle.{envelope.Type}",
             envelope,
             consumerGroup: ConsumerGroup);
 
@@ -186,8 +189,7 @@ public sealed class AlarmConsumer
     private void HandleReadyCore(EventEnvelope envelope)
     {
         var current = _upcasters.Upcast(envelope);
-        var squeaked = SqueakedEnvelope.Parse(current);
-        var (applied, transition) = _db.Write((conn, tx) =>
+        var (applied, reserved, released, duckId) = _db.Write((conn, tx) =>
         {
             if (envelope.LogOffset > 0)
             {
@@ -196,12 +198,24 @@ public sealed class AlarmConsumer
 
             if (!_inbox.TryInsert(conn, tx, envelope.EventId))
             {
-                return (false, AlarmTransition.None);
+                return (false, false, false, envelope.PartitionKey);
             }
 
-            _alarms.MarkSqueakSeq(conn, tx, squeaked.DuckId, squeaked.SequenceNumber);
-            var next = _alarms.TryRaise(conn, tx, envelope, squeaked);
-            return (true, next);
+            _sagas.MarkAlarmSeq(conn, tx, envelope.PartitionKey, envelope.SequenceNumber);
+            var now = _time.GetUtcNow();
+            if (string.Equals(current.Type, "AlarmRaised", StringComparison.Ordinal))
+            {
+                var raised = AlarmRaisedEnvelope.Parse(current);
+                return (true, _sagas.TryReserve(conn, tx, envelope, raised, now), false, raised.DuckId);
+            }
+
+            if (string.Equals(current.Type, "AlarmResolved", StringComparison.Ordinal))
+            {
+                var resolved = AlarmResolvedEnvelope.Parse(current);
+                return (true, false, _sagas.TryRelease(conn, tx, envelope, resolved), resolved.DuckId);
+            }
+
+            return (true, false, false, envelope.PartitionKey);
         });
 
         if (!applied)
@@ -211,17 +225,15 @@ public sealed class AlarmConsumer
         }
 
         Interlocked.Increment(ref _handledCount);
-        if (transition == AlarmTransition.Raised)
+        if (reserved)
         {
-            Interlocked.Increment(ref _raisedCount);
-            _output.WriteLine(
-                $"AlarmRaised {squeaked.DuckId} after {HandledCount} unique squeaks (EventId={envelope.EventId})");
+            Interlocked.Increment(ref _reservedCount);
+            _output.WriteLine($"FeeReserved {duckId} alarm={envelope.EventId}");
         }
-        else if (transition == AlarmTransition.Resolved)
+        else if (released)
         {
-            Interlocked.Increment(ref _resolvedCount);
-            _output.WriteLine(
-                $"AlarmResolved {squeaked.DuckId} after {HandledCount} unique squeaks (EventId={envelope.EventId})");
+            Interlocked.Increment(ref _releasedCount);
+            _output.WriteLine($"FeeReleased {duckId} reason={FeeReleased.ReasonAlarmResolved}");
         }
     }
 
@@ -251,4 +263,8 @@ public sealed class AlarmConsumer
 
         _db.Write((conn, tx) => _offsets.MarkProcessed(conn, tx, logOffset));
     }
+
+    private static bool IsAlarmEvent(string type) =>
+        string.Equals(type, "AlarmRaised", StringComparison.Ordinal)
+        || string.Equals(type, "AlarmResolved", StringComparison.Ordinal);
 }

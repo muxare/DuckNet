@@ -2,7 +2,7 @@ using System.Diagnostics;
 using DuckNet.EventBus;
 using DuckNet.Kernel.Persistence;
 
-namespace DuckNet.AlarmCenter;
+namespace DuckNet.BillingCenter;
 
 /// <summary>
 /// Publishes local outbox rows onto Telemetry's log via HTTP. Crash after POST
@@ -41,7 +41,7 @@ public sealed class RemoteOutboxDispatcher
             {
                 var envelope = EnvelopeJson.Deserialize(row.PayloadJson);
                 using var activity = DuckNetTracing.StartFromEnvelope(
-                    DuckNetTracing.Alarm,
+                    DuckNetTracing.Billing,
                     $"append.{envelope.Type}",
                     envelope,
                     ActivityKind.Producer);

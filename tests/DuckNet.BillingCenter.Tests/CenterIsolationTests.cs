@@ -1,6 +1,6 @@
 using DuckNet.Kernel.Persistence;
 
-namespace DuckNet.DashboardCenter.Tests;
+namespace DuckNet.BillingCenter.Tests;
 
 public class CenterIsolationTests
 {
@@ -8,26 +8,29 @@ public class CenterIsolationTests
     public void Centers_do_not_reference_each_other()
     {
         var root = RepoRoot();
-        var dashboardCsproj = File.ReadAllText(
-            Path.Combine(root, "src", "DuckNet.DashboardCenter", "DuckNet.DashboardCenter.csproj"));
+        var billingCsproj = File.ReadAllText(
+            Path.Combine(root, "src", "DuckNet.BillingCenter", "DuckNet.BillingCenter.csproj"));
         var alarmCsproj = File.ReadAllText(
             Path.Combine(root, "src", "DuckNet.AlarmCenter", "DuckNet.AlarmCenter.csproj"));
         var telemetryCsproj = File.ReadAllText(
             Path.Combine(root, "src", "DuckNet.TelemetryCenter", "DuckNet.TelemetryCenter.csproj"));
+        var dashboardCsproj = File.ReadAllText(
+            Path.Combine(root, "src", "DuckNet.DashboardCenter", "DuckNet.DashboardCenter.csproj"));
 
-        Assert.DoesNotContain("DuckNet.TelemetryCenter", dashboardCsproj, StringComparison.Ordinal);
-        Assert.DoesNotContain("DuckNet.AlarmCenter", dashboardCsproj, StringComparison.Ordinal);
-        Assert.DoesNotContain("DuckNet.DashboardCenter", alarmCsproj, StringComparison.Ordinal);
-        Assert.DoesNotContain("DuckNet.DashboardCenter", telemetryCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.AlarmCenter", billingCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.TelemetryCenter", billingCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.DashboardCenter", billingCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.BillingCenter", alarmCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.BillingCenter", telemetryCsproj, StringComparison.Ordinal);
         Assert.DoesNotContain("DuckNet.BillingCenter", dashboardCsproj, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DashboardCenter_source_never_opens_other_center_stores()
+    public void BillingCenter_source_never_opens_other_center_stores()
     {
         var root = RepoRoot();
         var files = Directory.GetFiles(
-            Path.Combine(root, "src", "DuckNet.DashboardCenter"),
+            Path.Combine(root, "src", "DuckNet.BillingCenter"),
             "*.cs",
             SearchOption.AllDirectories);
 
@@ -37,31 +40,29 @@ public class CenterIsolationTests
             Assert.DoesNotContain("EventLogStore", text, StringComparison.Ordinal);
             Assert.DoesNotContain("telemetry.db", text, StringComparison.Ordinal);
             Assert.DoesNotContain("alarm.db", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("dashboard.db", text, StringComparison.Ordinal);
             Assert.DoesNotContain("DuckNet.TelemetryCenter", text, StringComparison.Ordinal);
             Assert.DoesNotContain("DuckNet.AlarmCenter", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("DuckNet.DashboardCenter", text, StringComparison.Ordinal);
         }
     }
 
     [Fact]
-    public void Dashboard_schema_is_a_read_model_not_a_log()
+    public void Separate_schemas_do_not_share_tables()
     {
         using var telemetry = KernelDb.OpenInMemory(CenterSchema.Telemetry);
         using var alarm = KernelDb.OpenInMemory(CenterSchema.Alarm);
-        using var dashboard = KernelDb.OpenInMemory(CenterSchema.Dashboard);
+        using var billing = KernelDb.OpenInMemory(CenterSchema.Billing);
 
-        var dashboardTables = dashboard.TableNames();
-        Assert.Contains("squeaks_by_duck_hour", dashboardTables);
-        Assert.Contains("inbox", dashboardTables);
-        Assert.Contains("consumer_offsets", dashboardTables);
-        Assert.DoesNotContain("event_log", dashboardTables);
-        Assert.DoesNotContain("outbox", dashboardTables);
-        Assert.DoesNotContain("alarms", dashboardTables);
-        Assert.DoesNotContain("duck_state", dashboardTables);
+        Assert.Contains("billing_sagas", billing.TableNames());
+        Assert.Contains("outbox", billing.TableNames());
+        Assert.Contains("inbox", billing.TableNames());
+        Assert.DoesNotContain("event_log", billing.TableNames());
+        Assert.DoesNotContain("alarms", billing.TableNames());
+        Assert.DoesNotContain("squeaks_by_duck_hour", billing.TableNames());
 
         Assert.DoesNotContain("billing_sagas", telemetry.TableNames());
         Assert.DoesNotContain("billing_sagas", alarm.TableNames());
-        Assert.DoesNotContain("squeaks_by_duck_hour", telemetry.TableNames());
-        Assert.DoesNotContain("squeaks_by_duck_hour", alarm.TableNames());
     }
 
     private static string RepoRoot()

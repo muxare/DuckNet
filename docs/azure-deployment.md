@@ -240,7 +240,7 @@ These are order-of-magnitude USD figures, not a quote. Recalc in the [Azure pric
 
 What you configure in Azure Portal / Bicep is connection strings and identities, not a rewrite that extracts Alarm’s rate window into a Function and its HTTP API into another App Service. You *could* do that later (KEDA scale-out, separate API replicas) — that is an ops split, not required by the architecture.
 
-Aspire (`azd up`) can provision Option B/C from the existing AppHost. Bicep is the explicit, interview-friendly version already chosen for Step 12.
+Aspire (`azd up`) can provision Option B/C from the existing AppHost. Bicep is the explicit, interview-friendly version already chosen for Step 12 — the full Bicep-vs-Pulumi trade-off is recorded in [decisions/iac-bicep-vs-pulumi.md](decisions/iac-bicep-vs-pulumi.md).
 
 ## What to pick
 

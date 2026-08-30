@@ -1045,7 +1045,7 @@ Resolved before Step 4 implementation:
 | **Log storage (Azure)** | **Azure Event Hubs** | Telia-shaped partition key lesson; replay from beginning |
 | **Broker (Step 11 local)** | **RabbitMQ** via Aspire container | Simplest local at-least-once broker; proves port/adapter |
 | **Broker (Step 12 Azure)** | **Azure Service Bus** topics + subscriptions | Production-shaped; consumer group = subscription name |
-| **IaC (Step 12)** | **Bicep** + optional `azd` | Native Azure, good Aspire migration story |
+| **IaC (Step 12)** | **Bicep** + optional `azd` | Native Azure; `azd`/Aspire emit Bicep; no state backend — see [decision record](docs/decisions/iac-bicep-vs-pulumi.md) |
 | **Container hosting** | **Azure Container Apps** | One app per Center — matches deploy-any-Center CI/CD |
 | **CI from** | **Step 0** | Cheap insurance; CCA-F D3 practice |
 | **Claude PR review from** | **Step 0** | ~1–2 hr setup; high demo + exam value |

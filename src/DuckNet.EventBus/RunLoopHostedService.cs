@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Hosting;
+
 namespace DuckNet.EventBus;
 
 /// <summary>

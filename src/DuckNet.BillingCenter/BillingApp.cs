@@ -41,7 +41,7 @@ public static class BillingApp
         var sequencer = new PerKeySequencer(lastSeq);
         var time = TimeProvider.System;
 
-        var inner = new InMemoryEventBus();
+        var inner = EventBusFactory.Create();
         var shuffler = new ShufflerMiddleware(inner, opts.ShuffleWindow, seed: 42, opts.ShuffleEnabled);
         var duplicator = new DuplicatorMiddleware(
             shuffler,

@@ -16,7 +16,7 @@ One process, one SQLite file, one consumer group. Integration is `IEventBus` onl
 ## Invariants
 
 - No project reference from one Center to another. AppHost may reference Centers (orchestration).
-- No Center opens another Center's database file. Telemetry owns `event_log` writes; others consume via `HttpLogClient` / `IEventBus` (`GET/POST /bus/events`).
+- No Center opens another Center's database file. Telemetry owns `event_log` writes; others consume via `HttpLogClient` / `IEventBus` (`GET/POST /bus/events`). Aspire `WithReference` on RabbitMQ is infrastructure, not a Center-to-Center client.
 - Events are past facts (`Squeaked`, `AlarmRaised`, `AlarmResolved`, `FeeReserved`, `FeeReleased`). Dedup key is `EventId`. Order is per `PartitionKey`.
 - Envelope `Version` is a contract. Upcast in the consumer (`EventUpcasterPipeline`) before `Parse`. See skill `ducknet-event-contract`.
 - Hostile middleware (duplicator, shuffler) applies **after** log read, on the consumer, never before append.
@@ -31,7 +31,7 @@ src/DuckNet.{Name}Center/     # ASP.NET: /health + Center APIs
 src/DuckNet.AppHost/          # AddProject + EVENT_LOG_URL + health
 src/DuckNet.ServiceDefaults/  # OTel; DuckNet.* ActivitySources
 src/DuckNet.Contracts/        # event records only
-src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient, DuckNetTracing
+src/DuckNet.EventBus/         # IEventBus, EventBusFactory, RabbitMqEventBus, hostile wrappers, HttpLogClient, DuckNetTracing
 infra/docker/DuckNet.{Name}Center/Dockerfile
 ```
 
@@ -41,7 +41,7 @@ infra/docker/DuckNet.{Name}Center/Dockerfile
 2. `SubscribeAsync(consumerGroup)` with a unique group name.
 3. Handler: upcast → shard dispatch → sequencer (if keyed) → `RetryPipeline` → inbox → side effect → offset, one tx. Exhausted retries → DLQ + offset; do not mark inbox.
 4. Publish via local outbox; dispatcher appends through the bus (`HttpLogClient.AppendAsync`), not by opening Telemetry SQLite.
-5. Aspire: `AddProject`, `WithHttpHealthCheck("/health")`, `EVENT_LOG_URL` from telemetry HTTP endpoint. No `WithReference` used as a business client. Call `builder.AddServiceDefaults()` (OTel). Stamp/join `TraceId` via `DuckNetTracing` — do not invent Center-to-Center HTTP for traces.
+5. Aspire: `AddProject`, `WithHttpHealthCheck("/health")`, `EVENT_LOG_URL` from telemetry HTTP endpoint. `WithReference(rabbit)` + `DUCKNET_BUS_EXCHANGE` select `RabbitMqEventBus` via `EventBusFactory.Create()`. No `WithReference` used as a business client between Centers. Call `builder.AddServiceDefaults()` (OTel). Stamp/join `TraceId` via `DuckNetTracing` — do not invent Center-to-Center HTTP for traces.
 6. Tests: csproj isolation; catch-up from log while this Center was down; never opens Telemetry DB.
 7. Dockerfile + path in `deploy-center.yml`.
 8. `docs/architecture/step-N.md` when the step's acceptance criteria pass.

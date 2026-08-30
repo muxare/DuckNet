@@ -5,7 +5,7 @@ allowed-tools: Bash(dotnet *)
 disable-model-invocation: true
 ---
 
-Run the Step 10 multi-Center demo (team-shared, human-triggered).
+Run the Step 11 multi-Center demo (team-shared, human-triggered). Docker must be running (RabbitMQ).
 
 1. From the repo root:
 
@@ -13,7 +13,7 @@ Run the Step 10 multi-Center demo (team-shared, human-triggered).
 dotnet run --project src/DuckNet.AppHost
 ```
 
-2. Open the Aspire dashboard URL printed at startup. `telemetry`, `alarm`, `dashboard`, and `billing` should be healthy.
+2. Open the Aspire dashboard URL printed at startup. `rabbitmq`, `telemetry`, `alarm`, `dashboard`, and `billing` should be healthy.
 3. Open **Traces**. Names are `{resource}: {span}` (`alarm: handle.Squeaked`). Filter `handle.Squeaked` — not `DuckNet.*`. Click a row: `simulate.squeak` / `ingest.squeak` → `append.log` → both Centers' `handle.Squeaked` share one `TraceId`. A duplicate is a second handle span on that trace tagged `ducknet.duplicate`. HTTP `GET`s are usually separate traces.
 4. Click the **dashboard** resource URL — Vue UI of `squeaks_by_duck_hour` plus per-shard queue/lag cards (TanStack Query polls every 2s). Rebuild from the button, or `POST /dashboard/rebuild`.
 5. LoudDuck (`duck-1`) is on. `GET /metrics` on alarm or dashboard shows per-shard lag. `SHARD_COUNT=1` on a Center re-starves quiet keys.

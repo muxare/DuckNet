@@ -14,6 +14,7 @@
     <Project Path="tests/DuckNet.AlarmCenter.Tests/DuckNet.AlarmCenter.Tests.csproj" />
     <Project Path="tests/DuckNet.BillingCenter.Tests/DuckNet.BillingCenter.Tests.csproj" />
     <Project Path="tests/DuckNet.DashboardCenter.Tests/DuckNet.DashboardCenter.Tests.csproj" />
+    <Project Path="tests/DuckNet.EventBus.Tests/DuckNet.EventBus.Tests.csproj" />
     <Project Path="tests/DuckNet.Kernel.Tests/DuckNet.Kernel.Tests.csproj" />
   </Folder>
 </Solution>

@@ -39,7 +39,7 @@ public static class AlarmApp
         var lastSeq = db.Read(conn => alarms.LoadSqueakSeq(conn));
         var sequencer = new PerKeySequencer(lastSeq);
 
-        var inner = new InMemoryEventBus();
+        var inner = EventBusFactory.Create();
         var shuffler = new ShufflerMiddleware(inner, opts.ShuffleWindow, seed: 42, opts.ShuffleEnabled);
         var duplicator = new DuplicatorMiddleware(
             shuffler,

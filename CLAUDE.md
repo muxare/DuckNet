@@ -36,13 +36,13 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 10)
+## Layout (Step 11)
 
 ```
-src/DuckNet.AppHost/          # Aspire: telemetry + alarm + dashboard + billing
+src/DuckNet.AppHost/          # Aspire: telemetry + alarm + dashboard + billing + RabbitMQ
 src/DuckNet.ServiceDefaults/  # OTel + DuckNet.* ActivitySources
 src/DuckNet.Contracts/        # EventEnvelope (TraceId, CausationId), Squeaked v1/v2, AlarmRaised, AlarmResolved, FeeReserved, FeeReleased
-src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient, upcasters, DuckNetTracing
+src/DuckNet.EventBus/         # IEventBus, InMemoryEventBus, RabbitMqEventBus, EventBusFactory, hostile wrappers, HttpLogClient, upcasters, DuckNetTracing
 src/DuckNet.Kernel/           # primitives + Step 3 console
   Transport/                  # LogTailFeeder (SQLite)
   Consumer/                   # Inbox + PerKeySequencer + checkpoint + RetryPipeline + ShardWorkerPool
@@ -52,7 +52,7 @@ src/DuckNet.TelemetryCenter/  # owns event_log writes; GET/POST /bus/events; POS
 src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised / AlarmResolved via outbox; upcast Squeaked; DLQ; shards
 src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db; DLQ; GET /metrics
 src/DuckNet.BillingCenter/    # own DB; saga on AlarmRaised / AlarmResolved; timeout compensation; FeeReserved / FeeReleased
-tests/                        # kernel + AlarmCenter + DashboardCenter + BillingCenter
+tests/                        # kernel + EventBus + AlarmCenter + DashboardCenter + BillingCenter
 infra/docker/                 # one Dockerfile per Center
 .github/workflows/            # ci.yml, claude-review.yml, refactor-scan.yml, deploy-center.yml
 ```
@@ -145,6 +145,7 @@ Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; c
 | 7 | complete | `step-7` → `main` |
 | 8 | complete | `step-8` → `main` |
 | 9 | complete | `step-9` → `main` |
-| 10 | in progress | `step-10` |
+| 10 | complete | `step-10` → `main` |
+| 11 | in progress | `step-11` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

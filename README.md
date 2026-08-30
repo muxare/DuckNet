@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 8 — backpressure + hot partitions**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 9 — distributed tracing**.
 
 ## Rules
 
@@ -25,6 +25,18 @@ dotnet test
 ```
 
 ## Demos
+
+### Step 9 — tracing (Aspire)
+
+One squeak is one trace. `TraceId` (W3C traceparent) rides on the envelope; Centers never call each other. Open Aspire **Traces**. Names look like `alarm: handle.Squeaked` (resource + span). Filter `handle.Squeaked` — not `DuckNet.*` (that is the ActivitySource, not the dashboard name).
+
+```bash
+dotnet run --project src/DuckNet.AppHost
+```
+
+A duplicate delivery keeps the same `TraceId` and adds a second `handle.Squeaked` span tagged `ducknet.duplicate`. Inbox still skips the side effect.
+
+Agent shortcut: `/run-aspire`.
 
 ### Step 8 — hot partitions (kernel)
 
@@ -121,7 +133,7 @@ dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 
 Agent shortcuts: `/run-demo`, `/mis-demo`.
 
-**What to look for (Aspire):** Dashboard shard cards — LoudDuck's shard has queue depth and lag; other shards stay near 0. `GET /metrics` on alarm or dashboard. `/stats` `database` is still each Center's file, never `telemetry.db`.
+**What to look for (Aspire):** **Traces** — filter `handle.Squeaked`, click a row; `simulate.squeak` / `append.log` / both Centers share one `TraceId`. Dashboard shard cards — LoudDuck's shard has queue depth and lag; other shards stay near 0. `GET /metrics` on alarm or dashboard. `/stats` `database` is still each Center's file, never `telemetry.db`.
 
 **What to look for (kernel):** `--hot-demo --shard-count 1` → every duck's `maxLagMs` is huge. `--shard-count 3` → only keys that hash onto the LoudDuck shard lag; others stay around the handle delay. With defenses on and no poison, `Published == Counted` and `Out of order == 0`.
 
@@ -129,8 +141,9 @@ Agent shortcuts: `/run-demo`, `/mis-demo`.
 
 ```
 src/DuckNet.AppHost/          # Aspire orchestration
+src/DuckNet.ServiceDefaults/  # OTel + DuckNet.* ActivitySources
 src/DuckNet.Contracts/        # event records + versions only
-src/DuckNet.EventBus/         # IEventBus + HTTP log adapter + upcasters
+src/DuckNet.EventBus/         # IEventBus + HTTP log adapter + upcasters + tracing
 src/DuckNet.Kernel/           # durable primitives + console (shards, retry, DLQ CLI)
 src/DuckNet.TelemetryCenter/  # owns event_log; LoudDuck; POST /bus/poison
 src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised, DLQ, shards, GET /metrics

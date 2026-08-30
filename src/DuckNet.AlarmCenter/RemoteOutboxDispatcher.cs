@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DuckNet.EventBus;
 using DuckNet.Kernel.Persistence;
 
@@ -39,6 +40,11 @@ public sealed class RemoteOutboxDispatcher
             foreach (var row in rows)
             {
                 var envelope = EnvelopeJson.Deserialize(row.PayloadJson);
+                using var activity = DuckNetTracing.StartFromEnvelope(
+                    DuckNetTracing.Alarm,
+                    "append.AlarmRaised",
+                    envelope,
+                    ActivityKind.Producer);
                 await _client.AppendAsync(envelope, cancellationToken).ConfigureAwait(false);
                 _db.Write((conn, tx) =>
                     _outbox.MarkPublished(conn, tx, row.Id, DateTimeOffset.UtcNow));

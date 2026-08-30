@@ -528,8 +528,8 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] One squeak trace visible: Simulator → Telemetry → Alarm → Dashboard spans linked.
-- [ ] Trace survives duplicate delivery (same traceId on replays — document idempotent span handling).
+- [x] One squeak trace visible: Simulator → Telemetry → Alarm → Dashboard spans linked.
+- [x] Trace survives duplicate delivery (same traceId on replays — document idempotent span handling).
 
 **Estimated effort:** ~1 evening.
 
@@ -944,10 +944,10 @@ Never implement the next step on the same branch. Never merge a step with failin
 
 ### Observability checklist (Step 9+)
 
-- [ ] Structured logging with `EventId`, `PartitionKey`, `ConsumerGroup`.
-- [ ] OTel traces across Centers.
-- [ ] Lag metrics per shard (Step 8+).
-- [ ] DLQ depth metric (Step 7+).
+- [x] Structured logging with `EventId`, `PartitionKey`, `ConsumerGroup`.
+- [x] OTel traces across Centers.
+- [x] Lag metrics per shard (Step 8+).
+- [x] DLQ depth metric (Step 7+).
 
 ---
 

@@ -26,7 +26,9 @@ public static class CenterSchema
           version INTEGER NOT NULL,
           sequence_number INTEGER NOT NULL,
           payload_json TEXT NOT NULL,
-          occurred_at TEXT NOT NULL
+          occurred_at TEXT NOT NULL,
+          trace_id TEXT,
+          causation_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS outbox (

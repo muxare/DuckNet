@@ -35,17 +35,18 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 8)
+## Layout (Step 9)
 
 ```
 src/DuckNet.AppHost/          # Aspire: telemetry + alarm + dashboard
-src/DuckNet.Contracts/        # EventEnvelope, Squeaked v1/v2, AlarmRaised
-src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient, upcasters
+src/DuckNet.ServiceDefaults/  # OTel + DuckNet.* ActivitySources
+src/DuckNet.Contracts/        # EventEnvelope (TraceId, CausationId), Squeaked v1/v2, AlarmRaised
+src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient, upcasters, DuckNetTracing
 src/DuckNet.Kernel/           # primitives + Step 3 console
   Transport/                  # LogTailFeeder (SQLite)
   Consumer/                   # Inbox + PerKeySequencer + checkpoint + RetryPipeline + ShardWorkerPool
   Producer/                   # DuckSimulator (LoudDuck), TransactionalPublisher, OutboxDispatcher
-  Persistence/                # KernelDb + per-Center schema + dead_letter_queue
+  Persistence/                # KernelDb + per-Center schema + dead_letter_queue + event_log trace columns
 src/DuckNet.TelemetryCenter/  # owns event_log writes; GET/POST /bus/events; POST /bus/poison; LoudDuck
 src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised via outbox; upcast Squeaked; DLQ; shards
 src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db; DLQ; GET /metrics
@@ -123,6 +124,7 @@ Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; c
 | 5 | complete | `step-5` → `main` |
 | 6 | complete | `step-6` → `main` |
 | 7 | complete | `step-7` → `main` |
-| 8 | in progress | `step-8` |
+| 8 | complete | `step-8` → `main` |
+| 9 | in progress | `step-9` |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

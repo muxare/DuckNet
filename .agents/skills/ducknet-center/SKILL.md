@@ -27,10 +27,11 @@ One process, one SQLite file, one consumer group. Integration is `IEventBus` onl
 
 ```
 src/DuckNet.{Name}Center/     # ASP.NET: /health + Center APIs
-  {Name}App.cs                # composition; own KernelDb schema
+  {Name}App.cs                # composition; own KernelDb schema; AddServiceDefaults
 src/DuckNet.AppHost/          # AddProject + EVENT_LOG_URL + health
+src/DuckNet.ServiceDefaults/  # OTel; DuckNet.* ActivitySources
 src/DuckNet.Contracts/        # event records only
-src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient
+src/DuckNet.EventBus/         # IEventBus, hostile wrappers, HttpLogClient, DuckNetTracing
 infra/docker/DuckNet.{Name}Center/Dockerfile
 ```
 
@@ -40,7 +41,7 @@ infra/docker/DuckNet.{Name}Center/Dockerfile
 2. `SubscribeAsync(consumerGroup)` with a unique group name.
 3. Handler: upcast → shard dispatch → sequencer (if keyed) → `RetryPipeline` → inbox → side effect → offset, one tx. Exhausted retries → DLQ + offset; do not mark inbox.
 4. Publish via local outbox; dispatcher appends through the bus (`HttpLogClient.AppendAsync`), not by opening Telemetry SQLite.
-5. Aspire: `AddProject`, `WithHttpHealthCheck("/health")`, `EVENT_LOG_URL` from telemetry HTTP endpoint. No `WithReference` used as a business client.
+5. Aspire: `AddProject`, `WithHttpHealthCheck("/health")`, `EVENT_LOG_URL` from telemetry HTTP endpoint. No `WithReference` used as a business client. Call `builder.AddServiceDefaults()` (OTel). Stamp/join `TraceId` via `DuckNetTracing` — do not invent Center-to-Center HTTP for traces.
 6. Tests: csproj isolation; catch-up from log while this Center was down; never opens Telemetry DB.
 7. Dockerfile + path in `deploy-center.yml`.
 8. `docs/architecture/step-N.md` when the step's acceptance criteria pass.

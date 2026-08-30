@@ -20,7 +20,7 @@ Single-process kernel console plus the durable primitives library used by Center
 - `EventId` is the idempotency key. Duplicates keep the same id.
 - `SubscribeAsync(consumerGroup, …)` — group is a logical subscriber. Inbox and offsets are keyed by group.
 - Hostile middleware applies **after** log read, never before append.
-- Do not implement later steps early. Tracing lands on Step 9. RabbitMQ is Step 11.
+- `TraceId` is W3C traceparent on the envelope (Step 9). Duplicates keep it. RabbitMQ is Step 11.
 
 ## Step 0 map
 
@@ -120,6 +120,25 @@ Log → hostile bus → hash(PartitionKey) % N → shard worker
 | Mis-demo | `--shard-count 1` — quiet ducks wait behind LoudDuck |
 
 Sharding is consumer-owned. Capacity is a backpressure signal, not a blocking `WriteAsync` (that HOL-blocks quiet keys).
+
+## Step 9 map
+
+```
+Simulator starts DuckNet.Telemetry/Kernel simulate.squeak
+  → envelope.TraceId = Activity.Id (W3C traceparent)
+  → event_log.trace_id + causation_id
+  → consumer starts handle.Squeaked from TraceId
+  → inbox skip → same TraceId, tag ducknet.duplicate=true
+AlarmRaised copies TraceId; CausationId = parent EventId
+```
+
+| Piece | Role |
+|-------|------|
+| `DuckNetTracing` | ActivitySources + stamp/join helpers |
+| `DuckNet.ServiceDefaults` | `AddOpenTelemetry()`; OTLP when Aspire sets the endpoint |
+| `event_log.trace_id` | survives append; HTTP tail returns it |
+
+Verify: `dotnet test --filter Tracing`. Aspire **Traces**: filter `handle.Squeaked` (not `DuckNet.*`).
 
 ## Changing the kernel
 

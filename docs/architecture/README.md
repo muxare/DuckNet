@@ -15,6 +15,7 @@ Target roadmap (all steps, high-level): [DuckNetArchitectureSteps.html](../../Du
 | 6 | [step-6.md](./step-6.md) | Mixed v1/v2 log; upcast at the consumer, not in the bus |
 | 7 | [step-7.md](./step-7.md) | One poison message; retry → DLQ; stream continues |
 | 8 | [step-8.md](./step-8.md) | LoudDuck + sharding; quiet keys stay near real-time |
+| 9 | [step-9.md](./step-9.md) | Envelope TraceId + OTel; one squeak, one Aspire trace |
 
 After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md).
 

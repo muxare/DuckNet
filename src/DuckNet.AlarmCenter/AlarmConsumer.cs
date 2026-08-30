@@ -3,6 +3,7 @@ using DuckNet.EventBus;
 using DuckNet.Kernel;
 using DuckNet.Kernel.Consumer;
 using DuckNet.Kernel.Persistence;
+using System.Diagnostics;
 
 namespace DuckNet.AlarmCenter;
 
@@ -131,6 +132,12 @@ public sealed class AlarmConsumer
 
     private void HandleReady(EventEnvelope envelope)
     {
+        using var activity = DuckNetTracing.StartFromEnvelope(
+            DuckNetTracing.Alarm,
+            "handle.Squeaked",
+            envelope,
+            consumerGroup: ConsumerGroup);
+
         if (_handleDelay > TimeSpan.Zero)
         {
             Thread.Sleep(_handleDelay);
@@ -196,6 +203,7 @@ public sealed class AlarmConsumer
 
         if (!applied)
         {
+            DuckNetTracing.MarkDuplicate(Activity.Current);
             return;
         }
 

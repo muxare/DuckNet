@@ -13,6 +13,7 @@ public static class AlarmApp
         ArgumentException.ThrowIfNullOrWhiteSpace(opts.EventLogUrl);
 
         var builder = WebApplication.CreateBuilder(args);
+        builder.AddServiceDefaults();
         if (!string.IsNullOrWhiteSpace(opts.Urls))
         {
             builder.WebHost.UseUrls(opts.Urls);

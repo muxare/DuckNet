@@ -9,7 +9,11 @@ public static class SqueakedEnvelope
     /// Wire format for current <see cref="Squeaked"/> (v2). PartitionKey is the duck id;
     /// SequenceNumber is monotonic per key, never a global clock.
     /// </summary>
-    public static EventEnvelope Create(Squeaked squeaked, Guid? eventId = null)
+    public static EventEnvelope Create(
+        Squeaked squeaked,
+        Guid? eventId = null,
+        string? traceId = null,
+        string? causationId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(squeaked.DuckId);
         ArgumentOutOfRangeException.ThrowIfLessThan(squeaked.SequenceNumber, 1);
@@ -21,13 +25,19 @@ public static class SqueakedEnvelope
             PartitionKey: squeaked.DuckId,
             SequenceNumber: squeaked.SequenceNumber,
             OccurredAt: squeaked.OccurredAt,
-            PayloadJson: JsonSerializer.Serialize(squeaked, EnvelopeJson.Options));
+            PayloadJson: JsonSerializer.Serialize(squeaked, EnvelopeJson.Options),
+            TraceId: traceId,
+            CausationId: causationId);
     }
 
     /// <summary>
     /// Frozen v1 wire format for mixed-log replay tests. New producers must not call this.
     /// </summary>
-    public static EventEnvelope CreateV1(SqueakedV1 squeaked, Guid? eventId = null)
+    public static EventEnvelope CreateV1(
+        SqueakedV1 squeaked,
+        Guid? eventId = null,
+        string? traceId = null,
+        string? causationId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(squeaked.DuckId);
         ArgumentOutOfRangeException.ThrowIfLessThan(squeaked.SequenceNumber, 1);
@@ -39,7 +49,9 @@ public static class SqueakedEnvelope
             PartitionKey: squeaked.DuckId,
             SequenceNumber: squeaked.SequenceNumber,
             OccurredAt: squeaked.OccurredAt,
-            PayloadJson: JsonSerializer.Serialize(squeaked, EnvelopeJson.Options));
+            PayloadJson: JsonSerializer.Serialize(squeaked, EnvelopeJson.Options),
+            TraceId: traceId,
+            CausationId: causationId);
     }
 
     public static Squeaked Parse(EventEnvelope envelope)

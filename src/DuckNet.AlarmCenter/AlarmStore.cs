@@ -76,7 +76,8 @@ public sealed class AlarmStore
             var raisedEnvelope = AlarmRaisedEnvelope.Create(
                 raised,
                 seq,
-                causationId: envelope.EventId.ToString());
+                causationId: envelope.EventId.ToString(),
+                traceId: envelope.TraceId);
             InsertAlarm(connection, tx, raised, raisedEnvelope.EventId);
             WriteState(connection, tx, squeaked.DuckId, active: true, seq);
             _outbox.Insert(connection, tx, raisedEnvelope);

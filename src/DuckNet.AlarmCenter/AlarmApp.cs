@@ -82,9 +82,12 @@ public static class AlarmApp
             outbox,
             sp.GetRequiredService<HttpLogClient>()));
 
-        builder.Services.AddHostedService<AlarmFeederHostedService>();
-        builder.Services.AddHostedService<AlarmConsumerHostedService>();
-        builder.Services.AddHostedService<RemoteOutboxDispatcherHostedService>();
+        // AddSingleton<IHostedService>, not AddHostedService: the factory overload of
+        // AddHostedService dedupes by implementation type and would keep only the first
+        // RunLoopHostedService registration.
+        builder.Services.AddSingleton<IHostedService>(sp => new RunLoopHostedService(sp.GetRequiredService<HttpLogTailFeeder>().RunAsync));
+        builder.Services.AddSingleton<IHostedService>(sp => new RunLoopHostedService(sp.GetRequiredService<AlarmConsumer>().RunAsync));
+        builder.Services.AddSingleton<IHostedService>(sp => new RunLoopHostedService(sp.GetRequiredService<RemoteOutboxDispatcher>().RunAsync));
 
         var app = builder.Build();
         app.MapGet("/", () => Results.Redirect("/alarms"));

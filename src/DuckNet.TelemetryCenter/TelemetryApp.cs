@@ -58,7 +58,10 @@ public static class TelemetryApp
             options.SerializerOptions.PropertyNamingPolicy = EnvelopeJson.Options.PropertyNamingPolicy;
             options.SerializerOptions.PropertyNameCaseInsensitive = true;
         });
-        builder.Services.AddHostedService<OutboxDispatcherHostedService>();
+        // AddSingleton<IHostedService>, not AddHostedService: the factory overload of
+        // AddHostedService dedupes by implementation type and would drop any second
+        // RunLoopHostedService registration.
+        builder.Services.AddSingleton<IHostedService>(sp => new RunLoopHostedService(sp.GetRequiredService<OutboxDispatcher>().RunAsync));
         if (opts.RunSimulator)
         {
             builder.Services.AddHostedService<SimulatorHostedService>();

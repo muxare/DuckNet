@@ -43,7 +43,7 @@ public static class DashboardApp
         var offsets = new ConsumerOffsetStore(db, DashboardConsumer.ConsumerGroup);
         var readModel = new DashboardReadModel();
 
-        var inner = new InMemoryEventBus();
+        var inner = EventBusFactory.Create();
         var shuffler = new ShufflerMiddleware(inner, opts.ShuffleWindow, seed: 42, opts.ShuffleEnabled);
         var duplicator = new DuplicatorMiddleware(
             shuffler,

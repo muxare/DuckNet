@@ -87,6 +87,12 @@ Test: `dotnet test --filter Tracing`. Demo: Aspire **Traces**, filter `handle.Sq
 
 Test: `dotnet test --filter FullyQualifiedName~Billing`. Demo: Aspire `GET /sagas`; fast `POST /alarms/{duckId}/resolve`; slow wait `SAGA_TIMEOUT_SECONDS` (AppHost 15s).
 
+## Step 11 — IEventBus port (RabbitMQ)
+
+`EventBusFactory.Create()` returns `RabbitMqEventBus` when `ConnectionStrings__rabbitmq` is set, otherwise `InMemoryEventBus`. Fan-out is per `consumerGroup`. Same conformance suite in `tests/DuckNet.EventBus.Tests`. Center handlers stay on `IEventBus`. HTTP log remains the SoR; each Aspire Center uses `DUCKNET_BUS_EXCHANGE=ducknet.events.{center}` so feeders do not cross-talk.
+
+Test: `dotnet test --filter FullyQualifiedName~EventBus`. Demo: Aspire, `rabbitmq` healthy.
+
 ## Anti-patterns
 
 - Parsing “done” from log text instead of counts / test assertions.

@@ -17,6 +17,7 @@ Target roadmap (all steps, high-level): [DuckNetArchitectureSteps.html](../../Du
 | 8 | [step-8.md](./step-8.md) | LoudDuck + sharding; quiet keys stay near real-time |
 | 9 | [step-9.md](./step-9.md) | Envelope TraceId + OTel; one squeak, one Aspire trace |
 | 10 | [step-10.md](./step-10.md) | Billing saga: reserve on alarm, release or timeout compensate |
+| 11 | [step-11.md](./step-11.md) | IEventBus port: RabbitMQ in Aspire, in-memory in tests |
 
 After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md).
 

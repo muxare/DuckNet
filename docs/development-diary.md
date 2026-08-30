@@ -2,6 +2,31 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-30 — Step 11: IEventBus port to RabbitMQ
+
+### What changed
+`InMemoryEventBus` fans out per `consumerGroup`. Same conformance suite runs on `RabbitMqEventBus` (Testcontainers), including broker restart. Aspire adds a RabbitMQ container; Centers call `EventBusFactory.Create()`. Handlers and Center `.csproj` files do not reference RabbitMQ. HTTP log remains the system of record; each Center gets its own topic exchange so feeders do not triple-publish.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Log[event_log HTTP tail] --> Hostile[dup + shuffle]
+  Hostile --> Factory[EventBusFactory]
+  Factory -->|no connection string| Mem[InMemoryEventBus]
+  Factory -->|ConnectionStrings__rabbitmq| Rmq[RabbitMqEventBus]
+  Rmq --> Q["queue per consumer group"]
+```
+
+### How to test
+- `dotnet test --filter FullyQualifiedName~EventBus`
+- `dotnet test`
+- Aspire: `dotnet run --project src/DuckNet.AppHost` — `rabbitmq` healthy, then the Step 10 saga demo. Kill the broker in Aspire to watch reconnect.
+
+### Follow-ups
+**CCA-F:** skill `ducknet-event-bus` — `.agents/skills/ducknet-event-bus/SKILL.md` with `description` covering new `IEventBus` adapters (Service Bus in Step 12), `argument-hint: "[adapter-name]"`, `allowed-tools: Read, Edit, Write, Grep, Glob, Bash(dotnet *)`. Auto-invoke when adding `*EventBus.cs` or changing `EventBusFactory`. Not built this pass.
+
+**Refactor:** `EventBusFactory.Create()` is a one-line composition change in three Center App files. Step 12 (`ServiceBusEventBus`) should be empty handler diff if the factory grows a third branch from env.
+
 ## 2026-08-30 — Step 10: Billing saga without a distributed transaction
 
 ### What changed

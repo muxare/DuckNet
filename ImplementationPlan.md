@@ -77,7 +77,7 @@ DuckNet/
 ├── DuckNet.AppHost/                  # Aspire orchestration (Step 4+)
 ├── src/
 │   ├── DuckNet.Contracts/            # Shared event DTOs + versions
-│   ├── DuckNet.EventBus/             # IEventBus + in-memory impl
+│   ├── DuckNet.EventBus/             # IEventBus + in-memory + RabbitMQ
 │   ├── DuckNet.TelemetryCenter/
 │   ├── DuckNet.AlarmCenter/
 │   ├── DuckNet.DashboardCenter/      # Step 5
@@ -96,6 +96,7 @@ DuckNet/
 └── tests/
     ├── DuckNet.Kernel.Tests/         # keep kernel tests
     ├── DuckNet.AlarmCenter.Tests/
+    ├── DuckNet.EventBus.Tests/       # IEventBus conformance (in-memory + RabbitMQ)
     └── ...
 ```
 
@@ -602,12 +603,12 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Acceptance criteria:**
 
-- [ ] `IEventBus` conformance suite green on `InMemoryEventBus` before RabbitMQ is added.
-- [ ] Same suite green on `RabbitMqEventBus` (Testcontainers).
-- [ ] Reconnect test: kill broker → consumer recovers.
-- [ ] `git diff` on Center `.csproj` and handler code = empty (only AppHost + EventBus project change).
-- [ ] Full demo runs on RabbitMQ.
-- [ ] Kill broker → Centers retry/reconnect gracefully.
+- [x] `IEventBus` conformance suite green on `InMemoryEventBus` before RabbitMQ is added.
+- [x] Same suite green on `RabbitMqEventBus` (Testcontainers).
+- [x] Reconnect test: kill broker → consumer recovers.
+- [x] `git diff` on Center `.csproj` and handler code = empty (only AppHost + EventBus project change).
+- [x] Full demo runs on RabbitMQ.
+- [x] Kill broker → Centers retry/reconnect gracefully.
 
 **Estimated effort:** ~3 evenings (contract tests + in-memory fan-out, then adapter, then Aspire).
 

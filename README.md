@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 10 — saga: cross-Center workflow without transactions**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 11 — swap the transport (`IEventBus` → RabbitMQ)**.
 
 ## Rules
 
@@ -16,6 +16,7 @@ Each step adds one distributed-systems idea and stays runnable end-to-end. Curre
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 22](https://nodejs.org/) — DashboardCenter Vue UI (`npm ci` runs on `dotnet build`)
+- [Docker](https://docs.docker.com/get-docker/) — Aspire RabbitMQ container and `DuckNet.EventBus.Tests` broker suite
 
 ## Build & test
 
@@ -25,6 +26,20 @@ dotnet test
 ```
 
 ## Demos
+
+### Step 11 — RabbitMQ behind `IEventBus` (Aspire)
+
+The production path uses RabbitMQ. Center tests and the kernel still use `InMemoryEventBus` when `ConnectionStrings__rabbitmq` is unset. Handlers do not change.
+
+```bash
+dotnet run --project src/DuckNet.AppHost
+```
+
+Aspire dashboard: `rabbitmq`, `telemetry`, `alarm`, `dashboard`, and `billing` healthy. Then the Step 10 saga demo still applies. Kill `rabbitmq` in Aspire: feeders and consumers reconnect.
+
+`dotnet test --filter FullyQualifiedName~EventBus` is the port proof (in-memory + Testcontainers).
+
+Agent shortcut: `/run-aspire`.
 
 ### Step 10 — saga (Aspire)
 

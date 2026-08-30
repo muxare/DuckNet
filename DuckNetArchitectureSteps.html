@@ -287,7 +287,7 @@ flowchart LR
   classDef chg fill:#fef3c7,stroke:#b45309,stroke-width:2px,stroke-dasharray:4
   classDef old fill:#f1f5f9,stroke:#94a3b8,color:#475569
 </pre></div>
-<p class="delta"><b>Changed:</b> only the transport implementation. <code>git diff</code> on Center projects is empty — that diff is the punchline.</p>
+<p class="delta"><b>Changed:</b> composition roots call <code>EventBusFactory.Create()</code> (handlers and Center <code>.csproj</code> unchanged). Per-Center RabbitMQ exchange so HTTP log tail stays the SoR. As-built: <a href="docs/architecture/step-11.md">docs/architecture/step-11.md</a>.</p>
 
 <div class="phase">
 <h3>Phase C Summary — final target architecture</h3>

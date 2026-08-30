@@ -2,12 +2,13 @@
 # Deterministic merge of specialist findings into review-state + PR comment markdown.
 # Usage:
 #   aggregate-review.sh --state FILE --out-state FILE --out-comment FILE
-#                       [--sha HEX] [--findings FILE]...
+#                       [--out-summary FILE] [--sha HEX] [--findings FILE]...
 set -euo pipefail
 
 state=
 out_state=
 out_comment=
+out_summary=
 sha=unknown
 findings_files=()
 
@@ -16,6 +17,7 @@ while [[ $# -gt 0 ]]; do
     --state) state=$2; shift 2 ;;
     --out-state) out_state=$2; shift 2 ;;
     --out-comment) out_comment=$2; shift 2 ;;
+    --out-summary) out_summary=$2; shift 2 ;;
     --sha) sha=$2; shift 2 ;;
     --findings) findings_files+=("$2"); shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -23,7 +25,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$state" || -z "$out_state" || -z "$out_comment" ]]; then
-  echo "usage: $0 --state FILE --out-state FILE --out-comment FILE [--sha HEX] [--findings FILE]..." >&2
+  echo "usage: $0 --state FILE --out-state FILE --out-comment FILE [--out-summary FILE] [--sha HEX] [--findings FILE]..." >&2
   exit 2
 fi
 
@@ -63,11 +65,24 @@ jq -n \
         notes: $notes,
         requested: ($merged.requestedReviewers // []),
         ran: ($specialists | map(.reviewer) | unique),
+        specialists: $specialists,
         sha: $sha
       }
   ' > "$work"
 
 jq '.state' "$work" > "$out_state"
+
+if [[ -n "$out_summary" ]]; then
+  jq '{
+    verdict,
+    requested,
+    ran,
+    degraded,
+    skipped: .state.skipped,
+    risk: .state.risk,
+    specialists
+  }' "$work" > "$out_summary"
+fi
 
 python3 - "$work" "$out_comment" <<'PY'
 import json
@@ -79,9 +94,9 @@ out = Path(sys.argv[2])
 state = agg["state"]
 verdict = agg["verdict"]
 degraded = agg["degraded"]
-notes = agg.get("notes") or []
 requested = agg["requested"]
 ran = agg["ran"]
+specialists = agg.get("specialists") or []
 sha = (agg.get("sha") or "unknown")[:7]
 approved = verdict == "approve"
 icon = "✅" if approved else "⚠️"
@@ -90,36 +105,82 @@ risk = state["risk"]["level"]
 reasons = state["risk"].get("reasons") or []
 skipped = bool(state.get("skipped"))
 findings = state.get("findings") or []
+files = state.get("files") or []
 ran_set = set(ran)
 req_set = set(requested)
+FILE_COLLAPSE = 15
+
+ROLES = {
+    "triage": "Classify risk, tag files, pick specialists",
+    "architecture": "Five CLAUDE.md rules on tagged diff",
+    "security": "Secrets, envelope parse, /bus, auth",
+    "aggregate": "Merge JSON → this comment",
+}
 
 
 def cell(value):
     return str(value or "").replace("|", "\\|").replace("\n", " ")
 
 
+def specialist_result(name):
+    spec = next((s for s in specialists if s.get("reviewer") == name), None)
+    n = len((spec or {}).get("findings") or [])
+    err = (spec or {}).get("error") or ""
+    if name in ran_set:
+        extra = f" · {err}" if err else f" · {n} finding{'s' if n != 1 else ''}"
+        return f"`{name}` ran{extra}"
+    if name in req_set:
+        return f"`{name}` requested but produced no artifact"
+    return f"`{name}` skipped"
+
+
+if skipped or not requested:
+    triage_result = f"{risk} · no specialists"
+else:
+    names = ", ".join(requested) if requested else "none"
+    triage_result = f"{risk} · {names}"
+
 lines = [
     f"## {icon} Claude review — **{label}**",
     "",
-    f"Triage: **{risk}** risk",
+    "Advisory — `ci.yml` decides merge.",
+    "",
+    "### What ran",
+    "",
+    "| Stage | Role | Result |",
+    "|---|---|---|",
+    f"| triage | {ROLES['triage']} | {triage_result} |",
+    f"| architecture | {ROLES['architecture']} | {specialist_result('architecture')} |",
+    f"| security | {ROLES['security']} | {specialist_result('security')} |",
+    f"| aggregate | {ROLES['aggregate']} | {label} |",
 ]
+
+if skipped or not requested:
+    lines.extend(["", "No specialist review (low risk or nothing to inspect)."])
+
+lines.extend(["", f"### Why this is {risk} risk"])
 if reasons:
     lines.append("")
     for reason in reasons:
         lines.append(f"- {reason}")
-
-if skipped or not requested:
-    lines.extend(["", "No specialist review (low risk or nothing to inspect)."])
 else:
-    parts = []
-    for name in ("architecture", "security"):
-        if name in ran_set:
-            parts.append(f"`{name}` ran")
-        elif name in req_set:
-            parts.append(f"`{name}` requested but produced no artifact")
-        else:
-            parts.append(f"`{name}` skipped")
-    lines.extend(["", "Reviewers: " + "; ".join(parts) + "."])
+    lines.extend(["", "_No triage reasons._"])
+
+if files:
+    file_heading = f"Files ({len(files)})"
+    if len(files) > FILE_COLLAPSE:
+        lines.extend(["", f"<details><summary>{file_heading}</summary>", ""])
+    else:
+        lines.extend(["", f"### {file_heading}", ""])
+    lines.append("| Path | Risk | Areas |")
+    lines.append("|---|---|---|")
+    for item in files:
+        areas = ", ".join(item.get("areas") or []) or "—"
+        lines.append(
+            f"| `{cell(item.get('path'))}` | {cell(item.get('risk'))} | {cell(areas)} |"
+        )
+    if len(files) > FILE_COLLAPSE:
+        lines.extend(["", "</details>"])
 
 if findings:
     lines.extend(["", f"### Findings ({len(findings)})", ""])
@@ -133,20 +194,66 @@ if findings:
             f"| {cell(item.get('reviewer'))} | {cell(item.get('severity'))} | {file_cell} | {cell(item.get('detail'))}{extra} |"
         )
 elif not skipped and requested:
-    lines.extend(["", "No specialist findings."])
+    lines.extend(["", "### Findings", "", "None"])
 
-if notes:
+notes_by_reviewer = []
+for spec in specialists:
+    notes = spec.get("notes") or []
+    if notes:
+        notes_by_reviewer.append((spec.get("reviewer") or "unknown", notes))
+
+if notes_by_reviewer:
     lines.extend(["", "### Notes"])
-    for note in notes:
-        lines.append(f"- {note}")
+    for reviewer, notes in notes_by_reviewer:
+        lines.extend(["", f"**{reviewer}**"])
+        for note in notes:
+            lines.append(f"- {note}")
 
 if degraded:
     lines.extend(["", "### Degraded specialists"])
     for item in degraded:
         lines.append(f"- `{item.get('reviewer')}`: {item.get('error')}")
 
+triage_obj = {
+    "risk": state.get("risk"),
+    "files": files,
+    "requestedReviewers": requested,
+    "skipped": skipped,
+}
+aggregate_obj = {
+    "verdict": verdict,
+    "requested": requested,
+    "ran": ran,
+    "degraded": degraded,
+}
+
+
+def fence_json(obj):
+    return "```json\n" + json.dumps(obj, indent=2, ensure_ascii=False) + "\n```"
+
+
 lines.extend(
     [
+        "",
+        "<details>",
+        "<summary>Structured objects</summary>",
+        "",
+        "**Triage**",
+        "",
+        fence_json(triage_obj),
+        "",
+    ]
+)
+for spec in specialists:
+    name = spec.get("reviewer") or "specialist"
+    lines.extend([f"**{name}**", "", fence_json(spec), ""])
+lines.extend(
+    [
+        "**Aggregate**",
+        "",
+        fence_json(aggregate_obj),
+        "",
+        "</details>",
         "",
         f"<sub>Advisory only — `ci.yml` decides merge. Commit {sha}</sub>",
     ]

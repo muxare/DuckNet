@@ -31,7 +31,7 @@ env:
 
 jobs:
   triage:
-    name: triage
+    name: triage · risk and routing
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
@@ -135,6 +135,34 @@ jobs:
           echo "skipped=$(jq -r '.skipped' review-state.json)" >> "$GITHUB_OUTPUT"
           jq '{risk, requestedReviewers, skipped, files: [.files[].path]}' review-state.json
 
+      - name: Write job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          obj=review-state.json
+          if [ -f triage-claude.json ]; then
+            obj=triage-claude.json
+          elif [ ! -f review-state.json ]; then
+            echo "No structured object to summarize."
+            exit 0
+          fi
+          cost=""
+          turns=""
+          if [ -f review.json ]; then
+            cost=$(jq -r '.total_cost_usd // empty' review.json)
+            turns=$(jq -r '.num_turns // empty' review.json)
+          fi
+          bash .github/scripts/write-review-job-summary.sh \
+            --role triage \
+            --object "$obj" \
+            --model haiku \
+            --budget "$TRIAGE_BUDGET_USD" \
+            --schema .github/schemas/triage.schema.json \
+            --tools none \
+            --cost "$cost" \
+            --turns "$turns" \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: review-state
@@ -142,7 +170,7 @@ jobs:
           if-no-files-found: error
 
   architecture:
-    name: architecture
+    name: architecture · five rules
     needs: triage
     if: needs.triage.result == 'success' && needs.triage.outputs.wants_architecture == 'true'
     runs-on: ubuntu-latest
@@ -201,6 +229,31 @@ jobs:
             bash .github/scripts/extract-findings.sh architecture review.json findings-architecture.json
           fi
 
+      - name: Write job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -f findings-architecture.json ]; then
+            echo "No structured object to summarize."
+            exit 0
+          fi
+          cost=""
+          turns=""
+          if [ -f review.json ]; then
+            cost=$(jq -r '.total_cost_usd // empty' review.json)
+            turns=$(jq -r '.num_turns // empty' review.json)
+          fi
+          bash .github/scripts/write-review-job-summary.sh \
+            --role architecture \
+            --object findings-architecture.json \
+            --model haiku \
+            --budget "$SPECIALIST_BUDGET_USD" \
+            --schema .github/schemas/reviewer-findings.schema.json \
+            --tools none \
+            --cost "$cost" \
+            --turns "$turns" \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -209,7 +262,7 @@ jobs:
           if-no-files-found: error
 
   security:
-    name: security
+    name: security · secrets and parse
     needs: triage
     if: needs.triage.result == 'success' && needs.triage.outputs.wants_security == 'true'
     runs-on: ubuntu-latest
@@ -267,6 +320,31 @@ jobs:
             bash .github/scripts/extract-findings.sh security review.json findings-security.json
           fi
 
+      - name: Write job summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -f findings-security.json ]; then
+            echo "No structured object to summarize."
+            exit 0
+          fi
+          cost=""
+          turns=""
+          if [ -f review.json ]; then
+            cost=$(jq -r '.total_cost_usd // empty' review.json)
+            turns=$(jq -r '.num_turns // empty' review.json)
+          fi
+          bash .github/scripts/write-review-job-summary.sh \
+            --role security \
+            --object findings-security.json \
+            --model haiku \
+            --budget "$SPECIALIST_BUDGET_USD" \
+            --schema .github/schemas/reviewer-findings.schema.json \
+            --tools none \
+            --cost "$cost" \
+            --turns "$turns" \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -275,7 +353,7 @@ jobs:
           if-no-files-found: error
 
   aggregate:
-    name: aggregate
+    name: aggregate · comment
     needs: [triage, architecture, security]
     if: always() && !cancelled() && needs.triage.result == 'success'
     runs-on: ubuntu-latest
@@ -298,6 +376,7 @@ jobs:
             --state "$state"
             --out-state aggregated-state.json
             --out-comment comment.md
+            --out-summary summary.json
             --sha "$PR_SHA"
           )
           arch=$(find artifacts -name findings-architecture.json | head -n 1 || true)
@@ -307,6 +386,10 @@ jobs:
 
           bash .github/scripts/aggregate-review.sh "${args[@]}"
           cat comment.md
+          bash .github/scripts/write-review-job-summary.sh \
+            --role aggregate \
+            --object summary.json \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post or update review comment
         uses: actions/github-script@v7

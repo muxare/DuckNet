@@ -67,16 +67,19 @@ set -e
 
 subtype=""
 cost=""
+turns=""
 if [[ -s "$output" ]]; then
   jq '{is_error, subtype, total_cost_usd, num_turns}' "$output" >&2 || true
   subtype=$(jq -r '.subtype // empty' "$output" 2>/dev/null || true)
   cost=$(jq -r '.total_cost_usd // empty' "$output" 2>/dev/null || true)
+  turns=$(jq -r '.num_turns // empty' "$output" 2>/dev/null || true)
 fi
 
 emit() {
   echo "claude_exit=${claude_exit}"
   echo "claude_subtype=${subtype}"
   echo "cost_usd=${cost}"
+  echo "num_turns=${turns}"
 }
 emit
 if [[ -n "${meta:-}" ]]; then

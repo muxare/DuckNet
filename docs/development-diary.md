@@ -2,6 +2,33 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-30 — ReviewFlow job summaries and structured objects
+
+### What changed
+Each Claude PR Review job writes `$GITHUB_STEP_SUMMARY` (role, model/budget, schema object — not the raw envelope). The sticky comment now has a pipeline table, labeled risk reasons, files, notes grouped by reviewer, and collapsed JSON. Triage `risk.reasons` is constrained to why the level, not a changelog.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  triage[triage] --> state[review-state.json]
+  state --> arch[architecture]
+  state --> sec[security]
+  arch --> agg[aggregate]
+  sec --> agg
+  triage --> js[job summary]
+  arch --> js
+  sec --> js
+  agg --> js
+  agg --> pr[sticky comment]
+```
+
+### How to test
+- `bash .github/scripts/test-aggregate-review.sh`
+- Next PR: open a ReviewFlow check for the job summary; the sticky comment should include **What ran** and a **Structured objects** details block.
+
+### Follow-ups
+**Later:** inline Check annotations on the Files tab are still parked (`docs/ci-policy.md` out of scope for this pass). Job summaries + the collapsed JSON block are the surfaces.
+
 ## 2026-08-30 — Step 11: IEventBus port to RabbitMQ
 
 ### What changed

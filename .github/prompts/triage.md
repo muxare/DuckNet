@@ -33,7 +33,10 @@ comments) so no specialist should run. Then `requestedReviewers` must be `[]`.
 Return **only** the structured object required by the schema:
 
 - `risk.level` — `low` | `medium` | `high`
-- `risk.reasons` — short bullets a human can read
+- `risk.reasons` — why this **level**, not a changelog. File tagging already
+  covers what changed. Example: "EventBus transport selection can couple
+  Centers if the factory leaks broker types into handlers" — not "added
+  RabbitMqEventBus (394 lines)".
 - `files` — one entry per listed path, with `risk` and `areas`
 - `requestedReviewers` — unique subset of `architecture`, `security`
 - `skipped` — true only when no specialist should run

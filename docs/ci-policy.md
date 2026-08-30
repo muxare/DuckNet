@@ -5,7 +5,7 @@ Live behavior is in [`claude-review.yml`](../.github/workflows/claude-review.yml
 ## Current policy
 
 - **Required to merge:** `ci.yml` (`build-and-test`). Tests decide.
-- **Advisory (PR):** `claude-review.yml` (triage → architecture/security if requested → one aggregated comment). Verdict never fails the workflow. Jobs fail only on infrastructure (missing `CLAUDE_CODE_OAUTH_TOKEN`).
+- **Advisory (PR):** `claude-review.yml` (triage → architecture/security if requested → one aggregated comment). Verdict never fails the workflow. Jobs fail only on infrastructure (missing `CLAUDE_CODE_OAUTH_TOKEN`). Each job writes a GitHub Actions summary (what the stage does + its structured object); the sticky comment has a pipeline table and the same JSON in a collapsed block.
 - **Advisory (tree):** `refactor-scan.yml` — weekly Monday + `workflow_dispatch`. Two isolated Sonnet sessions (scan, then independent confidence) merged by `jq`. One GitHub issue per held patch finding and per plan-tier `proposed_issues` item; later runs update matching open issues (scan marker, then title) and skip closed `refactor-scan` issues. Not on `pull_request` (step PRs must not pick up unrelated refactors; ~`$1.50` per run). Scheduled runs skip if HEAD SHA already has a successful scan run. Local `/refactor-scan` does not open issues.
 - **Skipped:** draft PRs, fork PRs, docs-only diffs (`docs/**`, `*.md`, `*.html`).
 - **Interactive:** `@claude` via [`claude.yml`](../.github/workflows/claude.yml) (OWNER/MEMBER/COLLABORATOR only).

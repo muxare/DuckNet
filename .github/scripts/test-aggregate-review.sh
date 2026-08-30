@@ -46,6 +46,7 @@ bash "$scripts/aggregate-review.sh" \
   --state "$tmp/state.json" \
   --out-state "$tmp/agg-state.json" \
   --out-comment "$tmp/comment.md" \
+  --out-summary "$tmp/summary.json" \
   --sha abc1234deadbeef \
   --findings "$ex/findings-architecture.json" \
   --findings "$ex/findings-security.json"
@@ -54,11 +55,22 @@ jq -e '.findings | length == 1' "$tmp/agg-state.json" >/dev/null \
   || fail "aggregate: one finding"
 jq -e '.findings[0].reviewer == "architecture"' "$tmp/agg-state.json" >/dev/null \
   || fail "aggregate: reviewer tag"
+jq -e '.verdict == "request_changes"' "$tmp/summary.json" >/dev/null \
+  || fail "aggregate: summary verdict"
 grep -q 'request changes' "$tmp/comment.md" || fail "aggregate: verdict line"
 grep -q 'Advisory only' "$tmp/comment.md" || fail "aggregate: advisory footer"
+grep -q '### What ran' "$tmp/comment.md" || fail "aggregate: pipeline heading"
+grep -q '| Stage | Role | Result |' "$tmp/comment.md" || fail "aggregate: pipeline table"
 grep -q 'architecture` ran' "$tmp/comment.md" || fail "aggregate: architecture ran"
 grep -q 'security` ran' "$tmp/comment.md" || fail "aggregate: security ran"
+grep -q 'Why this is high risk' "$tmp/comment.md" || fail "aggregate: risk heading"
+grep -q 'Changes event contract' "$tmp/comment.md" || fail "aggregate: risk reason"
+grep -q '### Files' "$tmp/comment.md" || fail "aggregate: files table"
+grep -q '\*\*architecture\*\*' "$tmp/comment.md" || fail "aggregate: notes grouped"
 grep -q 'mixed-version replay' "$tmp/comment.md" || fail "aggregate: notes"
+grep -q '<details>' "$tmp/comment.md" || fail "aggregate: details"
+grep -q 'requestedReviewers' "$tmp/comment.md" || fail "aggregate: triage JSON"
+grep -q '"findings"' "$tmp/comment.md" || fail "aggregate: findings JSON"
 pass "aggregate both specialists"
 
 # --- aggregate: skipped triage → approve, no specialists ---
@@ -73,6 +85,8 @@ bash "$scripts/aggregate-review.sh" \
 
 grep -q 'approve' "$tmp/skip.md" || fail "skipped: approve"
 grep -q 'No specialist review' "$tmp/skip.md" || fail "skipped: copy"
+grep -q 'Why this is low risk' "$tmp/skip.md" || fail "skipped: risk heading"
+grep -q 'architecture` skipped' "$tmp/skip.md" || fail "skipped: architecture"
 pass "aggregate skipped"
 
 # --- aggregate: degraded specialist ---
@@ -86,7 +100,38 @@ bash "$scripts/aggregate-review.sh" \
 grep -q 'Degraded specialists' "$tmp/deg.md" || fail "degraded: heading"
 grep -q 'error_max_budget_usd' "$tmp/deg.md" || fail "degraded: error"
 grep -q 'approve' "$tmp/deg.md" || fail "degraded: no findings means approve"
+grep -q '### Findings' "$tmp/deg.md" || fail "degraded: findings section"
+grep -q '^None$' "$tmp/deg.md" || fail "degraded: none"
 pass "aggregate degraded"
+
+# --- job summary helper ---
+bash "$scripts/write-review-job-summary.sh" \
+  --role triage \
+  --object "$ex/triage-claude.json" \
+  --model haiku \
+  --budget 0.10 \
+  --schema .github/schemas/triage.schema.json \
+  --tools none \
+  --cost 0.04 \
+  --turns 1 \
+  > "$tmp/triage-summary.md"
+
+grep -q 'ReviewFlow — triage' "$tmp/triage-summary.md" || fail "job summary: heading"
+grep -q 'Classify risk' "$tmp/triage-summary.md" || fail "job summary: role"
+grep -q '| Model | haiku |' "$tmp/triage-summary.md" || fail "job summary: model"
+grep -q 'requestedReviewers' "$tmp/triage-summary.md" || fail "job summary: JSON"
+if grep -q 'structured_output' "$tmp/triage-summary.md"; then
+  fail "job summary: envelope leaked"
+fi
+
+bash "$scripts/write-review-job-summary.sh" \
+  --role aggregate \
+  --object "$tmp/summary.json" \
+  > "$tmp/agg-summary.md"
+
+grep -q 'ReviewFlow — aggregate' "$tmp/agg-summary.md" || fail "job summary: aggregate"
+grep -q 'no model' "$tmp/agg-summary.md" || fail "job summary: aggregate copy"
+pass "write-review-job-summary"
 
 # --- extract-findings: envelope vs degraded ---
 jq -n '{structured_output:{reviewer:"security",findings:[],notes:["ok"]}}' \

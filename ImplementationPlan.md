@@ -581,23 +581,35 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Implement:**
 
-1. **`RabbitMqEventBus`**
+1. **`IEventBus` contract tests first** (no RabbitMQ yet). Green on `InMemoryEventBus` before any broker wiring. Today `InMemoryEventBus` ignores `consumerGroup` (one shared channel); the suite must fail until fan-out is real. Add `tests/DuckNet.EventBus.Tests`. Do not put Docker on Center/handler tests.
+   - Two consumer groups each receive a copy of one publish.
+   - Duplicate `EventId` is still delivered (at-least-once); inbox — not the bus — is the dedupe.
+   - Envelope round-trip (`Type`, `PayloadJson`, `TraceId`, `CausationId`).
+   - Same suite later runs twice: in-memory + `RabbitMqEventBus` (Testcontainers).
+   - Reconnect: stop broker, publish, start, consumer continues (RabbitMQ-only; skip until item 2 exists).
+   - Optional CI: Center `.csproj` / handler files must not reference RabbitMQ packages.
+
+2. **`RabbitMqEventBus`**
    - Exchange: topic `ducknet.events`.
    - Routing key: `{type}.{version}` or partition key hash.
    - At-least-once: manual ack after handler + inbox commit; nack → redelivery.
    - Consumer groups → separate queues per group.
+   - Plug into the contract suite from item 1; do not call this done on a demo-only check.
 
-2. **AppHost** — RabbitMQ resource; connection string to all Centers.
+3. **AppHost** — RabbitMQ resource; connection string to all Centers.
 
-3. **Event log retention** — log remains source of truth for replay; broker is transport, not system of record.
+4. **Event log retention** — log remains source of truth for replay; broker is transport, not system of record.
 
 **Acceptance criteria:**
 
+- [ ] `IEventBus` conformance suite green on `InMemoryEventBus` before RabbitMQ is added.
+- [ ] Same suite green on `RabbitMqEventBus` (Testcontainers).
+- [ ] Reconnect test: kill broker → consumer recovers.
 - [ ] `git diff` on Center `.csproj` and handler code = empty (only AppHost + EventBus project change).
 - [ ] Full demo runs on RabbitMQ.
 - [ ] Kill broker → Centers retry/reconnect gracefully.
 
-**Estimated effort:** ~2 evenings.
+**Estimated effort:** ~3 evenings (contract tests + in-memory fan-out, then adapter, then Aspire).
 
 **Phase C tag:** `step-11-production-shaped`
 

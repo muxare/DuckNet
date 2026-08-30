@@ -73,6 +73,14 @@ Sharding is consumer-owned, not inside `IEventBus`. Blocking a bounded `WriteAsy
 
 Test: burst hot then quiet on different shards; `SHARD_COUNT=1` quiet lag is large; `SHARD_COUNT=3` quiet lag ≈ handle delay.
 
+## Step 9 — Envelope TraceId + OpenTelemetry
+
+Simulator creates a producer span and stamps `EventEnvelope.TraceId` with the W3C `traceparent`. `event_log` persists `trace_id` and `causation_id`. Consumers start `handle.Squeaked` from that id. Duplicator clones `TraceId`; inbox skip tags `ducknet.duplicate=true`. `AlarmRaised` copies `TraceId` and sets `CausationId` to the parent `EventId`.
+
+`DuckNet.ServiceDefaults` is OTel only (no HTTP resilience, no remapped `/health`). Aspire injects `OTEL_EXPORTER_OTLP_ENDPOINT`.
+
+Test: `dotnet test --filter Tracing`. Demo: Aspire **Traces**, filter `handle.Squeaked` (not `DuckNet.*`).
+
 ## Anti-patterns
 
 - Parsing “done” from log text instead of counts / test assertions.

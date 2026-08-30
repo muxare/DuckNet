@@ -6,6 +6,7 @@
     <Project Path="src/DuckNet.DashboardCenter/DuckNet.DashboardCenter.csproj" />
     <Project Path="src/DuckNet.EventBus/DuckNet.EventBus.csproj" />
     <Project Path="src/DuckNet.Kernel/DuckNet.Kernel.csproj" />
+    <Project Path="src/DuckNet.ServiceDefaults/DuckNet.ServiceDefaults.csproj" />
     <Project Path="src/DuckNet.TelemetryCenter/DuckNet.TelemetryCenter.csproj" />
   </Folder>
   <Folder Name="/tests/">

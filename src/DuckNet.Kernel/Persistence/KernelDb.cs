@@ -36,6 +36,7 @@ public sealed class KernelDb : IDisposable
         }
 
         EnsureSchema(connection, schema);
+        EventLogStore.EnsureTraceColumns(connection);
         return new KernelDb(connection, path);
     }
 
@@ -47,6 +48,7 @@ public sealed class KernelDb : IDisposable
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
         EnsureSchema(connection, schema);
+        EventLogStore.EnsureTraceColumns(connection);
         return new KernelDb(connection, ":memory:");
     }
 

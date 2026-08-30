@@ -24,7 +24,8 @@ public static class PoisonEvents
             PartitionKey: partitionKey,
             SequenceNumber: sequenceNumber,
             OccurredAt: DateTimeOffset.UtcNow,
-            PayloadJson: PayloadJson);
+            PayloadJson: PayloadJson,
+            TraceId: DuckNetTracing.CurrentOrNewTraceParent());
 
     public static EventEnvelope WithValidSqueakedPayload(EventEnvelope envelope)
     {

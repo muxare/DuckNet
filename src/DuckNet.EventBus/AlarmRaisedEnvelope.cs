@@ -14,7 +14,8 @@ public static class AlarmRaisedEnvelope
         AlarmRaised raised,
         long sequenceNumber,
         Guid? eventId = null,
-        string? causationId = null)
+        string? causationId = null,
+        string? traceId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(raised.DuckId);
         ArgumentOutOfRangeException.ThrowIfLessThan(sequenceNumber, 1);
@@ -27,6 +28,7 @@ public static class AlarmRaisedEnvelope
             SequenceNumber: sequenceNumber,
             OccurredAt: DateTimeOffset.UtcNow,
             PayloadJson: JsonSerializer.Serialize(raised, JsonOptions),
+            TraceId: traceId,
             CausationId: causationId);
     }
 

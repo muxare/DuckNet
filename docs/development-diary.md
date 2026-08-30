@@ -2,6 +2,33 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-30 — Step 9: distributed tracing
+
+### What changed
+Envelope `TraceId` is now a W3C traceparent stamped by the simulator / ingest. `event_log` stores `trace_id` and `causation_id` so the HTTP tail returns them. Each Center starts an `Activity` from that id (`DuckNet.Telemetry` / `DuckNet.Alarm` / `DuckNet.Dashboard`). `AlarmRaised` copies `TraceId` and sets `CausationId` to the parent `EventId`. Duplicates keep `TraceId`; inbox skip tags `ducknet.duplicate`. `DuckNet.ServiceDefaults` is OTel only (AlwaysOn sampler, OTLP when Aspire sets the endpoint).
+
+### Architecture impact
+```mermaid
+sequenceDiagram
+  participant Sim as simulate.squeak
+  participant Log as event_log
+  participant A as Alarm handle.Squeaked
+  participant D as Dashboard handle.Squeaked
+  Sim->>Log: TraceId=traceparent
+  Log->>A: same TraceId
+  Log->>D: same TraceId
+```
+
+### How to test
+- `dotnet test --filter Tracing`
+- `dotnet test`
+- Aspire: `dotnet run --project src/DuckNet.AppHost` → **Traces**, filter `handle.Squeaked` (not `DuckNet.*`)
+
+### Follow-ups
+**CCA-F:** `ducknet-mcp-ops` — `.claude/skills/ducknet-mcp-ops/SKILL.md` plus a small `DuckNet.Mcp` project (`get_consumer_lag`, `list_dlq`, `replay_event`, `rebuild_dashboard`). Plan lists it as Step 9+ optional. Not built this pass.
+
+**Deferred:** HTTP resilience / `MapDefaultEndpoints` in ServiceDefaults (would collide with existing `/health` and double-retry `HttpLogClient`). Azure Monitor exporter is Step 12.
+
 ## 2026-08-29 — Refactor scan opens per-task GitHub issues
 
 ### What changed

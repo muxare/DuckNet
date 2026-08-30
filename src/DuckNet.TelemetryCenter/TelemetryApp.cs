@@ -12,6 +12,7 @@ public static class TelemetryApp
     {
         var opts = options ?? TelemetryOptions.FromConfiguration(args);
         var builder = WebApplication.CreateBuilder(args);
+        builder.AddServiceDefaults();
         if (!string.IsNullOrWhiteSpace(opts.Urls))
         {
             builder.WebHost.UseUrls(opts.Urls);
@@ -39,8 +40,9 @@ public static class TelemetryApp
             opts.Seed,
             opts.MinDelayMs,
             opts.MaxDelayMs,
-            opts.LoudDuckId);
-        var dispatcher = new OutboxDispatcher(db, outbox, log);
+            opts.LoudDuckId,
+            activitySource: DuckNetTracing.Telemetry);
+        var dispatcher = new OutboxDispatcher(db, outbox, log, DuckNetTracing.Telemetry);
 
         if (opts.InjectPoisonEvent)
         {
@@ -93,6 +95,7 @@ public static class TelemetryApp
                 return Results.BadRequest();
             }
 
+            using var activity = DuckNetTracing.StartProducer(DuckNetTracing.Telemetry, "ingest.squeak", request.DuckId);
             await pub.PublishSqueakAsync(request.DuckId, request.VolumeDb ?? 60, ct);
             return Results.Accepted();
         });

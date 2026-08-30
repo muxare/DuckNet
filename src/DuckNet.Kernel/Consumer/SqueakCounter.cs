@@ -1,6 +1,7 @@
 using DuckNet.Contracts;
 using DuckNet.EventBus;
 using DuckNet.Kernel.Persistence;
+using System.Diagnostics;
 
 namespace DuckNet.Kernel.Consumer;
 
@@ -168,6 +169,12 @@ public sealed class SqueakCounter
 
     private void HandleReady(EventEnvelope envelope)
     {
+        using var activity = DuckNetTracing.StartFromEnvelope(
+            DuckNetTracing.Kernel,
+            "handle.Squeaked",
+            envelope,
+            consumerGroup: _consumerGroup);
+
         if (_handleDelay > TimeSpan.Zero)
         {
             Thread.Sleep(_handleDelay);
@@ -242,6 +249,7 @@ public sealed class SqueakCounter
 
         if (!_inbox.ShouldHandle(envelope.EventId))
         {
+            DuckNetTracing.MarkDuplicate(Activity.Current);
             LogSkip(envelope.EventId);
             return;
         }
@@ -261,6 +269,7 @@ public sealed class SqueakCounter
 
         if (!applied)
         {
+            DuckNetTracing.MarkDuplicate(Activity.Current);
             LogSkip(envelope.EventId);
             return;
         }

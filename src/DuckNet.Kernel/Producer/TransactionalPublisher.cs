@@ -35,7 +35,11 @@ public sealed class TransactionalPublisher
             var sequence = _state.NextSequence(conn, tx, duckId);
             var squeaked = new Squeaked(duckId, sequence, DateTimeOffset.UtcNow, volumeDb);
             // PartitionKey = duck id. Sequence is per duck, never global. Envelope version is v2.
-            _outbox.Insert(conn, tx, SqueakedEnvelope.Create(squeaked));
+            // TraceId is W3C traceparent from the current span (simulator / ingest) so
+            // consumers join the same trace without an HTTP parent.
+            _outbox.Insert(conn, tx, SqueakedEnvelope.Create(
+                squeaked,
+                traceId: DuckNetTracing.CurrentOrNewTraceParent()));
         });
 
         return Task.CompletedTask;

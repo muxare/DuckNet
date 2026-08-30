@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using DuckNet.EventBus;
+
 namespace DuckNet.Kernel.Producer;
 
 public sealed class DuckSimulator
@@ -12,6 +15,7 @@ public sealed class DuckSimulator
     private readonly string? _loudDuckId;
     private readonly int _loudWeight;
     private readonly string[] _otherDuckIds;
+    private readonly ActivitySource _activitySource;
 
     public DuckSimulator(
         TransactionalPublisher publisher,
@@ -20,7 +24,8 @@ public sealed class DuckSimulator
         int minDelayMs = 10,
         int maxDelayMs = 80,
         string? loudDuckId = null,
-        int loudWeight = DefaultLoudWeight)
+        int loudWeight = DefaultLoudWeight,
+        ActivitySource? activitySource = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(duckCount, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(minDelayMs, 0);
@@ -34,6 +39,7 @@ public sealed class DuckSimulator
         _random = seed.HasValue ? new Random(seed.Value) : Random.Shared;
         _loudDuckId = string.IsNullOrWhiteSpace(loudDuckId) ? null : loudDuckId;
         _loudWeight = loudWeight;
+        _activitySource = activitySource ?? DuckNetTracing.Kernel;
         _otherDuckIds = _loudDuckId is null
             ? []
             : Enumerable.Range(1, duckCount)
@@ -51,8 +57,7 @@ public sealed class DuckSimulator
         while (DateTimeOffset.UtcNow < endAt && !cancellationToken.IsCancellationRequested)
         {
             var duckId = NextDuckId();
-            await _publisher.PublishSqueakAsync(duckId, NextVolumeDb(), cancellationToken);
-            PublishedCount++;
+            await EmitAsync(duckId, cancellationToken);
             await Task.Delay(_random.Next(_minDelayMs, _maxDelayMs + 1), cancellationToken);
         }
     }
@@ -61,11 +66,17 @@ public sealed class DuckSimulator
 
     public async Task PublishOneAsync(string duckId, CancellationToken cancellationToken = default)
     {
-        await _publisher.PublishSqueakAsync(duckId, NextVolumeDb(), cancellationToken);
-        PublishedCount++;
+        await EmitAsync(duckId, cancellationToken);
     }
 
     public string? LoudDuckId => _loudDuckId;
+
+    private async Task EmitAsync(string duckId, CancellationToken cancellationToken)
+    {
+        using var activity = DuckNetTracing.StartProducer(_activitySource, "simulate.squeak", duckId);
+        await _publisher.PublishSqueakAsync(duckId, NextVolumeDb(), cancellationToken);
+        PublishedCount++;
+    }
 
     private string NextDuckId()
     {

@@ -3,6 +3,7 @@ using DuckNet.EventBus;
 using DuckNet.Kernel;
 using DuckNet.Kernel.Consumer;
 using DuckNet.Kernel.Persistence;
+using System.Diagnostics;
 
 namespace DuckNet.DashboardCenter;
 
@@ -145,6 +146,11 @@ public sealed class DashboardConsumer
         }
 
         Interlocked.Increment(ref _attemptCount);
+        using var activity = DuckNetTracing.StartFromEnvelope(
+            DuckNetTracing.Dashboard,
+            "handle.Squeaked",
+            envelope,
+            consumerGroup: ConsumerGroup);
         if (_handleDelay > TimeSpan.Zero)
         {
             Thread.Sleep(_handleDelay);
@@ -210,6 +216,10 @@ public sealed class DashboardConsumer
         if (applied)
         {
             Interlocked.Increment(ref _handledCount);
+        }
+        else
+        {
+            DuckNetTracing.MarkDuplicate(Activity.Current);
         }
     }
 

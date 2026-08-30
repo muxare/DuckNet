@@ -20,6 +20,7 @@ public static class DashboardApp
                 Args = args,
                 WebRootPath = wwwroot,
             });
+        builder.AddServiceDefaults();
         if (!string.IsNullOrWhiteSpace(opts.Urls))
         {
             builder.WebHost.UseUrls(opts.Urls);

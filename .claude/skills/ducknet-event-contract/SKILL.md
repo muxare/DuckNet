@@ -18,10 +18,10 @@ Contracts are immutable shapes. Behavior lives in upcasters. Handlers parse **on
 
 - `DuckNet.Contracts` — payload records and `EventEnvelope` only. No DB, no HTTP, no upcast logic.
 - New facts get a new `Version`. Old rows in `event_log` stay as they were written.
-- Upcast rewrites `Version` + `PayloadJson`. **`EventId` does not change** (inbox still dedups).
+- Upcast rewrites `Version` + `PayloadJson`. **`EventId` does not change** (inbox still dedups). **`TraceId` and `CausationId` pass through.** **`TraceId` and `CausationId` do not change** (same trace on replay).
 - Default for a new field is explicit and testable (Squeaked v1→v2: `VolumeDb = 0`, unknown — not an estimate).
 - Every consumer upcasts **before** `Parse`. `SqueakedEnvelope.Parse` rejects stale versions on purpose.
-- A contract change deploys **all** Centers (`deploy-center.yml` fans out on `src/DuckNet.Contracts/**` and `src/DuckNet.EventBus/**`).
+- A contract change deploys **all** Centers (`deploy-center.yml` fans out on `src/DuckNet.Contracts/**`, `src/DuckNet.EventBus/**`, and `src/DuckNet.ServiceDefaults/**`).
 
 ## Checklist
 

@@ -11,6 +11,7 @@
     <ProjectReference Include="..\DuckNet.Contracts\DuckNet.Contracts.csproj" />
     <ProjectReference Include="..\DuckNet.EventBus\DuckNet.EventBus.csproj" />
     <ProjectReference Include="..\DuckNet.Kernel\DuckNet.Kernel.csproj" />
+    <ProjectReference Include="..\DuckNet.ServiceDefaults\DuckNet.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <Target Name="BuildDashboardUi" BeforeTargets="BeforeBuild"

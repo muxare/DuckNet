@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DuckNet.EventBus;
 using DuckNet.Kernel.Persistence;
 
@@ -12,14 +13,20 @@ public sealed class OutboxDispatcher
     private readonly KernelDb _db;
     private readonly OutboxStore _outbox;
     private readonly EventLogStore _log;
+    private readonly ActivitySource _activitySource;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly PollingLoop _pollingLoop;
 
-    public OutboxDispatcher(KernelDb db, OutboxStore outbox, EventLogStore log)
+    public OutboxDispatcher(
+        KernelDb db,
+        OutboxStore outbox,
+        EventLogStore log,
+        ActivitySource? activitySource = null)
     {
         _db = db;
         _outbox = outbox;
         _log = log;
+        _activitySource = activitySource ?? DuckNetTracing.Kernel;
         _pollingLoop = new PollingLoop(DispatchAvailableAsync, TimeSpan.FromMilliseconds(10));
     }
 
@@ -46,6 +53,11 @@ public sealed class OutboxDispatcher
         foreach (var row in rows)
         {
             var envelope = EnvelopeJson.Deserialize(row.PayloadJson);
+            using var activity = DuckNetTracing.StartFromEnvelope(
+                _activitySource,
+                "append.log",
+                envelope,
+                ActivityKind.Internal);
             _db.Write((conn, tx) =>
             {
                 _log.Append(conn, tx, envelope);

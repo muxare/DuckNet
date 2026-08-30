@@ -2,6 +2,37 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-30 — Step 10: Billing saga without a distributed transaction
+
+### What changed
+BillingCenter owns `billing_sagas`. `AlarmRaised` inserts `Reserved` and publishes `FeeReserved`. `AlarmResolved` before expiry → `Released` + `FeeReleased` (`AlarmResolved`). Timeout worker: still `Reserved` after `SAGA_TIMEOUT_SECONDS` → `Expired` + `FeeReleased` (`Timeout`). Duplicate `AlarmRaised` cannot double-charge (inbox `EventId` + saga PK). AlarmCenter now emits `AlarmResolved` when the event-time window drops, and `POST /alarms/{duckId}/resolve` for the fast demo. No Center-to-Center calls.
+
+### Architecture impact
+```mermaid
+sequenceDiagram
+  participant A as AlarmCenter
+  participant L as event_log
+  participant B as BillingCenter
+  A->>L: AlarmRaised EventId=A
+  L->>B: FeeReserved / saga Reserved
+  alt resolve
+    A->>L: AlarmResolved
+    L->>B: Released + FeeReleased
+  else timeout
+    B->>L: Expired + FeeReleased Timeout
+  end
+```
+
+### How to test
+- `dotnet test --filter FullyQualifiedName~Billing`
+- `dotnet test`
+- Aspire: `GET /sagas` on billing; fast `POST /alarms/duck-1/resolve`; slow wait 15s (`SAGA_TIMEOUT_SECONDS`)
+
+### Follow-ups
+**CCA-F:** `/saga-demo` command — curl the two paths and print `/sagas` JSON. Not built this pass; `/run-aspire` already covers the smoke steps.
+
+**Refactor:** `RemoteOutboxDispatcher` is copied in Alarm and Billing. Extract to Kernel/EventBus if a third producer Center appears.
+
 ## 2026-08-30 — Step 9: distributed tracing
 
 ### What changed

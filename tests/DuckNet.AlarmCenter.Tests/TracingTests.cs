@@ -27,7 +27,7 @@ public class TracingTests
                 var envelope = SqueakedEnvelope.Create(
                     new Squeaked("duck-1", seq, at.AddSeconds(seq)),
                     traceId: parentTrace);
-                if (store.TryRaise(conn, tx, envelope, SqueakedEnvelope.Parse(envelope)))
+                if (store.TryRaise(conn, tx, envelope, SqueakedEnvelope.Parse(envelope)) == AlarmTransition.Raised)
                 {
                     parentEventId = envelope.EventId;
                 }

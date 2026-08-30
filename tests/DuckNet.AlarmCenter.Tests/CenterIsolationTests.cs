@@ -19,6 +19,8 @@ public class CenterIsolationTests
         Assert.DoesNotContain("DuckNet.AlarmCenter", telemetryCsproj, StringComparison.Ordinal);
         Assert.DoesNotContain("DuckNet.DashboardCenter", alarmCsproj, StringComparison.Ordinal);
         Assert.DoesNotContain("DuckNet.DashboardCenter", telemetryCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.BillingCenter", alarmCsproj, StringComparison.Ordinal);
+        Assert.DoesNotContain("DuckNet.BillingCenter", telemetryCsproj, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -56,6 +58,8 @@ public class CenterIsolationTests
         Assert.Contains("squeak_window", alarmTables);
         Assert.DoesNotContain("event_log", alarmTables);
         Assert.DoesNotContain("duck_state", alarmTables);
+        Assert.DoesNotContain("billing_sagas", alarmTables);
+        Assert.DoesNotContain("billing_sagas", telemetryTables);
     }
 
     private static string RepoRoot()

@@ -140,6 +140,28 @@ AlarmRaised copies TraceId; CausationId = parent EventId
 
 Verify: `dotnet test --filter Tracing`. Aspire **Traces**: filter `handle.Squeaked` (not `DuckNet.*`).
 
+## Step 10 map
+
+```
+AlarmRaised EventId=A
+  → Billing inbox + INSERT billing_sagas PK=A state=Reserved
+  → outbox FeeReserved
+AlarmResolved CausationId=A before expires_at
+  → UPDATE Reserved → Released + FeeReleased reason=AlarmResolved
+Timeout worker: still Reserved and expires_at <= now
+  → UPDATE Reserved → Expired + FeeReleased reason=Timeout
+Duplicate AlarmRaised: inbox skip / PK ignore — no second fee
+```
+
+| Piece | Role |
+|-------|------|
+| `BillingCenter` | own SQLite; consumer group `billing-center` |
+| `billing_sagas` | PK `alarm_id` = `AlarmRaised.EventId` |
+| `SagaTimeoutWorker` | compensator; not a distributed lock |
+| `POST /alarms/{duckId}/resolve` | AlarmCenter operator fact → `AlarmResolved` |
+
+Verify: `dotnet test --filter FullyQualifiedName~Billing`. Demo: Aspire `GET billing /sagas`; fast `POST alarm /alarms/duck-1/resolve`; slow wait `SAGA_TIMEOUT_SECONDS`.
+
 ## Changing the kernel
 
 1. Keep producer and consumer coupled only through the log/bus. Producer does not reference consumer types.

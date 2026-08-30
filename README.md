@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 9 — distributed tracing**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 10 — saga: cross-Center workflow without transactions**.
 
 ## Rules
 
@@ -25,6 +25,32 @@ dotnet test
 ```
 
 ## Demos
+
+### Step 10 — saga (Aspire)
+
+AlarmCenter raises; BillingCenter reserves a fee. Resolve before the timeout and the fee is released. Miss the window and a timeout worker compensates. The two Centers never call each other.
+
+```bash
+dotnet run --project src/DuckNet.AppHost
+```
+
+Aspire dashboard: `telemetry`, `alarm`, `dashboard`, and `billing` healthy. Then:
+
+```bash
+# Watch the saga
+curl http://<billing>/sagas
+
+# Fast path — operator resolve on AlarmCenter (emits AlarmResolved)
+curl -X POST http://<alarm>/alarms/duck-1/resolve
+curl http://<billing>/sagas   # state Released, FeeReleased reason=AlarmResolved
+
+# Slow path — leave another alarm Reserved; Aspire timeout is 15s
+# GET /sagas → Expired, FeeReleased reason=Timeout
+```
+
+`SAGA_TIMEOUT_SECONDS` defaults to 300; AppHost sets 15 so the timeout path is demoable. `BILLING_FEE_CENTS` defaults to 100.
+
+Agent shortcut: `/run-aspire`.
 
 ### Step 9 — tracing (Aspire)
 
@@ -133,7 +159,7 @@ dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 
 Agent shortcuts: `/run-demo`, `/mis-demo`.
 
-**What to look for (Aspire):** **Traces** — filter `handle.Squeaked`, click a row; `simulate.squeak` / `append.log` / both Centers share one `TraceId`. Dashboard shard cards — LoudDuck's shard has queue depth and lag; other shards stay near 0. `GET /metrics` on alarm or dashboard. `/stats` `database` is still each Center's file, never `telemetry.db`.
+**What to look for (Aspire):** **Traces** — filter `handle.Squeaked`, click a row; `simulate.squeak` / `append.log` / both Centers share one `TraceId`. **Saga** — billing `GET /sagas`; fast `POST` alarm `/alarms/duck-1/resolve` → `Released`; wait 15s → `Expired`. Dashboard shard cards — LoudDuck's shard has queue depth and lag; other shards stay near 0. `GET /metrics` on alarm or dashboard. `/stats` `database` is still each Center's file, never `telemetry.db`.
 
 **What to look for (kernel):** `--hot-demo --shard-count 1` → every duck's `maxLagMs` is huge. `--shard-count 3` → only keys that hash onto the LoudDuck shard lag; others stay around the handle delay. With defenses on and no poison, `Published == Counted` and `Out of order == 0`.
 
@@ -146,8 +172,9 @@ src/DuckNet.Contracts/        # event records + versions only
 src/DuckNet.EventBus/         # IEventBus + HTTP log adapter + upcasters + tracing
 src/DuckNet.Kernel/           # durable primitives + console (shards, retry, DLQ CLI)
 src/DuckNet.TelemetryCenter/  # owns event_log; LoudDuck; POST /bus/poison
-src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised, DLQ, shards, GET /metrics
+src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised / AlarmResolved, DLQ, shards
 src/DuckNet.DashboardCenter/  # disposable read model + Vue UI + DLQ + shard lag
+src/DuckNet.BillingCenter/    # own DB, saga, timeout compensation, FeeReserved / FeeReleased
 tests/
 infra/docker/                 # one image per Center
 ```
@@ -171,8 +198,10 @@ infra/docker/                 # one image per Center
 | 5 | complete | Delete the dashboard, rebuild from the log |
 | 6 | complete | Mixed v1/v2 log; upcast at the consumer, not in the bus |
 | 7 | complete | One poison message; retry → DLQ; stream continues |
-| 8 | in progress | LoudDuck + sharding; quiet keys stay near real-time |
-| 9+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 8 | complete | LoudDuck + sharding; quiet keys stay near real-time |
+| 9 | complete | Envelope TraceId + OTel; one squeak, one Aspire trace |
+| 10 | in progress | Billing saga: reserve on alarm, release or timeout compensate |
+| 11+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

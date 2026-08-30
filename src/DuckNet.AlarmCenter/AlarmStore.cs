@@ -6,6 +6,13 @@ using Microsoft.Data.Sqlite;
 
 namespace DuckNet.AlarmCenter;
 
+public enum AlarmTransition
+{
+    None,
+    Raised,
+    Resolved
+}
+
 public sealed class AlarmStore
 {
     private readonly OutboxStore _outbox;
@@ -24,6 +31,22 @@ public sealed class AlarmStore
     public int Threshold => _threshold;
 
     public int WindowSeconds => _windowSeconds;
+
+    /// <summary>
+    /// Step 4 DBs have no last_alarm_event_id. Add it nullable; new CREATE TABLE already includes it.
+    /// </summary>
+    public static void EnsureLastAlarmEventIdColumn(SqliteConnection connection, SqliteTransaction tx)
+    {
+        if (HasColumn(connection, tx, "duck_alarm_state", "last_alarm_event_id"))
+        {
+            return;
+        }
+
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "ALTER TABLE duck_alarm_state ADD COLUMN last_alarm_event_id TEXT";
+        cmd.ExecuteNonQuery();
+    }
 
     public IReadOnlyDictionary<string, long> LoadSqueakSeq(SqliteConnection connection)
     {
@@ -56,7 +79,7 @@ public sealed class AlarmStore
         cmd.ExecuteNonQuery();
     }
 
-    public bool TryRaise(
+    public AlarmTransition TryRaise(
         SqliteConnection connection,
         SqliteTransaction tx,
         EventEnvelope envelope,
@@ -66,7 +89,7 @@ public sealed class AlarmStore
         var windowStart = squeaked.OccurredAt - TimeSpan.FromSeconds(_windowSeconds);
         TrimWindow(connection, tx, squeaked.DuckId, windowStart);
         var count = CountWindow(connection, tx, squeaked.DuckId);
-        var (active, lastAlarmSeq) = ReadState(connection, tx, squeaked.DuckId);
+        var (active, lastAlarmSeq, lastAlarmEventId) = ReadState(connection, tx, squeaked.DuckId);
 
         if (count > _threshold && !active)
         {
@@ -79,17 +102,49 @@ public sealed class AlarmStore
                 causationId: envelope.EventId.ToString(),
                 traceId: envelope.TraceId);
             InsertAlarm(connection, tx, raised, raisedEnvelope.EventId);
-            WriteState(connection, tx, squeaked.DuckId, active: true, seq);
+            WriteState(connection, tx, squeaked.DuckId, active: true, seq, raisedEnvelope.EventId.ToString());
             _outbox.Insert(connection, tx, raisedEnvelope);
-            return true;
+            return AlarmTransition.Raised;
         }
 
         if (count <= _threshold && active)
         {
-            WriteState(connection, tx, squeaked.DuckId, active: false, lastAlarmSeq);
+            PublishResolved(
+                connection,
+                tx,
+                squeaked.DuckId,
+                lastAlarmSeq,
+                lastAlarmEventId,
+                resolvedAt: squeaked.OccurredAt,
+                traceId: envelope.TraceId);
+            return AlarmTransition.Resolved;
         }
 
-        return false;
+        return AlarmTransition.None;
+    }
+
+    public bool TryResolve(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string duckId,
+        string? traceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(duckId);
+        var (active, lastAlarmSeq, lastAlarmEventId) = ReadState(connection, tx, duckId);
+        if (!active)
+        {
+            return false;
+        }
+
+        PublishResolved(
+            connection,
+            tx,
+            duckId,
+            lastAlarmSeq,
+            lastAlarmEventId,
+            resolvedAt: DateTimeOffset.UtcNow,
+            traceId: traceId);
+        return true;
     }
 
     public IReadOnlyList<AlarmRow> List(SqliteConnection connection)
@@ -113,6 +168,27 @@ public sealed class AlarmStore
         }
 
         return rows;
+    }
+
+    private void PublishResolved(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string duckId,
+        long lastAlarmSeq,
+        string? lastAlarmEventId,
+        DateTimeOffset resolvedAt,
+        string? traceId)
+    {
+        var alarmEventId = lastAlarmEventId ?? LatestAlarmEventId(connection, tx, duckId);
+        var seq = lastAlarmSeq + 1;
+        var resolved = new AlarmResolved(duckId, resolvedAt);
+        var envelope = AlarmResolvedEnvelope.Create(
+            resolved,
+            seq,
+            causationId: alarmEventId,
+            traceId: traceId);
+        WriteState(connection, tx, duckId, active: false, seq, alarmEventId);
+        _outbox.Insert(connection, tx, envelope);
     }
 
     private static void InsertWindow(
@@ -166,22 +242,23 @@ public sealed class AlarmStore
         return (long)cmd.ExecuteScalar()!;
     }
 
-    private static (bool Active, long LastSeq) ReadState(
+    private static (bool Active, long LastSeq, string? LastAlarmEventId) ReadState(
         SqliteConnection connection,
         SqliteTransaction tx,
         string duckId)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
-        cmd.CommandText = "SELECT active, last_seq FROM duck_alarm_state WHERE duck_id = $d";
+        cmd.CommandText = "SELECT active, last_seq, last_alarm_event_id FROM duck_alarm_state WHERE duck_id = $d";
         cmd.Parameters.AddWithValue("$d", duckId);
         using var reader = cmd.ExecuteReader();
         if (!reader.Read())
         {
-            return (false, 0);
+            return (false, 0, null);
         }
 
-        return (reader.GetInt64(0) != 0, reader.GetInt64(1));
+        var lastEventId = reader.IsDBNull(2) ? null : reader.GetString(2);
+        return (reader.GetInt64(0) != 0, reader.GetInt64(1), lastEventId);
     }
 
     private static void WriteState(
@@ -189,19 +266,41 @@ public sealed class AlarmStore
         SqliteTransaction tx,
         string duckId,
         bool active,
-        long lastSeq)
+        long lastSeq,
+        string? lastAlarmEventId)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = """
-            INSERT INTO duck_alarm_state (duck_id, active, last_seq)
-            VALUES ($d, $a, $seq)
-            ON CONFLICT(duck_id) DO UPDATE SET active = $a, last_seq = $seq
+            INSERT INTO duck_alarm_state (duck_id, active, last_seq, last_alarm_event_id)
+            VALUES ($d, $a, $seq, $e)
+            ON CONFLICT(duck_id) DO UPDATE SET
+              active = $a,
+              last_seq = $seq,
+              last_alarm_event_id = $e
             """;
         cmd.Parameters.AddWithValue("$d", duckId);
         cmd.Parameters.AddWithValue("$a", active ? 1 : 0);
         cmd.Parameters.AddWithValue("$seq", lastSeq);
+        cmd.Parameters.AddWithValue("$e", (object?)lastAlarmEventId ?? DBNull.Value);
         cmd.ExecuteNonQuery();
+    }
+
+    private static string? LatestAlarmEventId(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string duckId)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            SELECT event_id FROM alarms
+            WHERE duck_id = $d
+            ORDER BY id DESC
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("$d", duckId);
+        return cmd.ExecuteScalar() as string;
     }
 
     private static void InsertAlarm(
@@ -222,6 +321,27 @@ public sealed class AlarmStore
         cmd.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("$e", eventId.ToString());
         cmd.ExecuteNonQuery();
+    }
+
+    private static bool HasColumn(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string table,
+        string column)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"PRAGMA table_info({table})";
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

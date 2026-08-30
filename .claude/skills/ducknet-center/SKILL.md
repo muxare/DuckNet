@@ -17,7 +17,7 @@ One process, one SQLite file, one consumer group. Integration is `IEventBus` onl
 
 - No project reference from one Center to another. AppHost may reference Centers (orchestration).
 - No Center opens another Center's database file. Telemetry owns `event_log` writes; others consume via `HttpLogClient` / `IEventBus` (`GET/POST /bus/events`).
-- Events are past facts (`Squeaked`, `AlarmRaised`). Dedup key is `EventId`. Order is per `PartitionKey`.
+- Events are past facts (`Squeaked`, `AlarmRaised`, `AlarmResolved`, `FeeReserved`, `FeeReleased`). Dedup key is `EventId`. Order is per `PartitionKey`.
 - Envelope `Version` is a contract. Upcast in the consumer (`EventUpcasterPipeline`) before `Parse`. See skill `ducknet-event-contract`.
 - Hostile middleware (duplicator, shuffler) applies **after** log read, on the consumer, never before append.
 - Inbox + contiguous `last_offset` (+ Center side effects) commit in one transaction.

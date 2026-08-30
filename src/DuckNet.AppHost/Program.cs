@@ -22,6 +22,15 @@ builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")
     .WithEnvironment("HANDLE_DELAY_MS", "12")
     .WaitFor(telemetry);
 
+builder.AddProject<Projects.DuckNet_BillingCenter>("billing")
+    .WithHttpHealthCheck("/health")
+    .WithEnvironment("DUCKNET_DB", Path.Combine(dataDir, "billing.db"))
+    .WithEnvironment("EVENT_LOG_URL", telemetry.GetEndpoint("http"))
+    .WithEnvironment("SAGA_TIMEOUT_SECONDS", "15")
+    .WithEnvironment("BILLING_FEE_CENTS", "100")
+    .WithEnvironment("SHARD_COUNT", "3")
+    .WaitFor(telemetry);
+
 builder.AddProject<Projects.DuckNet_DashboardCenter>("dashboard")
     .WithHttpHealthCheck("/health")
     .WithEnvironment("DUCKNET_DB", Path.Combine(dataDir, "dashboard.db"))

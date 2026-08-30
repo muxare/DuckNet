@@ -33,6 +33,14 @@ real, correct as proposed, and worth doing:
 - `0.0–0.2` — the evidence does not hold: snippet not found, claim
   contradicted by the code, or the change would alter behavior.
 
+The `0.9–1.0` band additionally requires that behavior preservation is
+checkable from the text you can read. You are read-only: when correctness
+depends on runtime semantics not visible in the diff — DI registration and
+lifetimes, reflection-driven discovery, serialization contracts,
+hosted-service or middleware wiring — cap the score at `0.6` and name in the
+rationale which existing tests would catch a regression. A claim you cannot
+verify by reading is not a claim you may endorse at `0.9`.
+
 ## Output
 
 Return **only** the structured object required by the schema:

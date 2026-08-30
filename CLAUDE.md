@@ -9,6 +9,7 @@ Toy domain, real distributed architecture. Smart rubber ducks emit facts; Center
 3. **Events are past facts**, not commands (`Squeaked`, not `SqueakTheDuck`).
 4. **Transport is hostile** (from Step 1): at-least-once, unordered across keys.
 5. **Every step stays runnable.** Tag and merge on completion.
+6. **"No behavior change" is a test result, not a diff impression.** Never claim it in a commit, PR, or issue without a green `dotnet test` on the change; if tests can't be run, write "untested" and say why.
 
 ## Git workflow
 

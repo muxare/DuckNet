@@ -43,7 +43,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      # The agent must be able to validate before pushing: issue #24's
+      # implementation shipped a runtime bug with "no behavior change" in the
+      # PR body because dotnet build/test needed an approval nobody was there
+      # to give. Install the SDK and pre-approve exactly those commands.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           trigger_phrase: "@claude"
+          claude_args: |
+            --allowedTools "Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet format:*)"

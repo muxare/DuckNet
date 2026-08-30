@@ -64,6 +64,13 @@ Plan tier:
   (touches logic with test cover), `high` (touches logic without cover, or
   concurrency/crash-window code).
 
+A change is never `low` risk merely because it is textually mechanical.
+Anything that collapses or merges distinct types into one, or touches DI
+registration, reflection-driven discovery, serialization contracts, or
+hosted-service/middleware wiring, is at least `medium`: frameworks key
+behavior off type identity, so "byte-for-byte identical classes" can be
+load-bearing (e.g. `AddHostedService` dedupes by implementation type).
+
 ## Quality bar
 
 - Every finding must cite code you actually read; patch findings quote it

@@ -14,6 +14,9 @@ export default defineConfig({
       "/dashboard": "http://localhost:5152",
       "/stats": "http://localhost:5152",
       "/health": "http://localhost:5152",
+      "/ui": "http://localhost:5152",
+      "/metrics": "http://localhost:5152",
+      "/dlq": "http://localhost:5152",
     },
   },
 });

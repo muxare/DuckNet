@@ -16,11 +16,28 @@ namespace Microsoft.Extensions.Hosting;
 /// </summary>
 public static class Extensions
 {
+    public const string LabCorsPolicy = "DuckNetLab";
+
     public static TBuilder AddServiceDefaults<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {
         builder.ConfigureOpenTelemetry();
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy(LabCorsPolicy, policy =>
+                policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+        });
         return builder;
+    }
+
+    /// <summary>
+    /// Lab CORS so the Dashboard Vue app can poll other Centers as a browser client.
+    /// Not a Center-to-Center call.
+    /// </summary>
+    public static WebApplication UseDuckNetLabCors(this WebApplication app)
+    {
+        app.UseCors(LabCorsPolicy);
+        return app;
     }
 
     public static TBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder)

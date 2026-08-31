@@ -89,12 +89,19 @@ public static class DashboardApp
         builder.Services.AddSingleton<IHostedService>(sp => new RunLoopHostedService(sp.GetRequiredService<DashboardConsumer>().RunAsync));
 
         var app = builder.Build();
+        app.UseDuckNetLabCors();
         if (wwwroot is not null)
         {
             app.UseDefaultFiles();
             app.UseStaticFiles();
         }
         app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "dashboard" }));
+        app.MapGet("/ui/catalog", (DashboardOptions options) =>
+            Results.Json(new UiCatalog(
+                Telemetry: CatalogUrl(options.UiTelemetryUrl),
+                Alarm: CatalogUrl(options.UiAlarmUrl),
+                Billing: CatalogUrl(options.UiBillingUrl),
+                Dashboard: "")));
         app.MapGet("/dashboard/summary", (KernelDb kernelDb, DashboardReadModel model) =>
         {
             var rows = kernelDb.Read(conn => model.List(conn));
@@ -184,7 +191,12 @@ public static class DashboardApp
 
     private static string EnsureTrailingSlash(string url) =>
         url.EndsWith('/') ? url : url + "/";
+
+    private static string CatalogUrl(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "" : value.Trim().TrimEnd('/');
 }
+
+public sealed record UiCatalog(string Telemetry, string Alarm, string Billing, string Dashboard);
 
 public sealed record DashboardSummary(
     IReadOnlyList<SqueakHourRow> Rows,
@@ -202,7 +214,10 @@ public sealed record DashboardOptions(
     string? Urls,
     int ShardCount = PartitionShard.DefaultCount,
     int HandleDelayMs = 0,
-    int ShardCapacity = PartitionShard.DefaultCapacity)
+    int ShardCapacity = PartitionShard.DefaultCapacity,
+    string? UiTelemetryUrl = null,
+    string? UiAlarmUrl = null,
+    string? UiBillingUrl = null)
 {
     public static DashboardOptions FromConfiguration(string[] args)
     {
@@ -225,7 +240,10 @@ public sealed record DashboardOptions(
             Urls: config["URLS"],
             ShardCount: ParseInt(config["SHARD_COUNT"], PartitionShard.DefaultCount),
             HandleDelayMs: ParseInt(config["HANDLE_DELAY_MS"], 0),
-            ShardCapacity: ParseInt(config["SHARD_CAPACITY"], PartitionShard.DefaultCapacity));
+            ShardCapacity: ParseInt(config["SHARD_CAPACITY"], PartitionShard.DefaultCapacity),
+            UiTelemetryUrl: EmptyToNull(config["UI_TELEMETRY_URL"]),
+            UiAlarmUrl: EmptyToNull(config["UI_ALARM_URL"]),
+            UiBillingUrl: EmptyToNull(config["UI_BILLING_URL"]));
     }
 
     private static bool IsTrue(string? value) =>
@@ -242,4 +260,7 @@ public sealed record DashboardOptions(
         && parsed is >= 0 and <= 1
             ? parsed
             : fallback;
+
+    private static string? EmptyToNull(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

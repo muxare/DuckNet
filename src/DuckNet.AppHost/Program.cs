@@ -15,7 +15,7 @@ var telemetry = builder.AddProject<Projects.DuckNet_TelemetryCenter>("telemetry"
     .WithEnvironment("LOUD_DUCK_ID", "duck-1")
     .WithEnvironment("RUN_SIMULATOR", "true");
 
-builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")
+var alarm = builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")
     .WithHttpHealthCheck("/health")
     .WithReference(rabbit)
     .WithEnvironment("DUCKNET_DB", Path.Combine(dataDir, "alarm.db"))
@@ -28,7 +28,7 @@ builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")
     .WaitFor(rabbit)
     .WaitFor(telemetry);
 
-builder.AddProject<Projects.DuckNet_BillingCenter>("billing")
+var billing = builder.AddProject<Projects.DuckNet_BillingCenter>("billing")
     .WithHttpHealthCheck("/health")
     .WithReference(rabbit)
     .WithEnvironment("DUCKNET_DB", Path.Combine(dataDir, "billing.db"))
@@ -48,6 +48,9 @@ builder.AddProject<Projects.DuckNet_DashboardCenter>("dashboard")
     .WithEnvironment("DUCKNET_BUS_EXCHANGE", "ducknet.events.dashboard")
     .WithEnvironment("SHARD_COUNT", "3")
     .WithEnvironment("HANDLE_DELAY_MS", "12")
+    .WithEnvironment("UI_TELEMETRY_URL", telemetry.GetEndpoint("http"))
+    .WithEnvironment("UI_ALARM_URL", alarm.GetEndpoint("http"))
+    .WithEnvironment("UI_BILLING_URL", billing.GetEndpoint("http"))
     .WaitFor(rabbit)
     .WaitFor(telemetry);
 

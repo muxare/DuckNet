@@ -70,6 +70,7 @@ public static class TelemetryApp
         }
 
         var app = builder.Build();
+        app.UseDuckNetLabCors();
         app.MapGet("/", () => Results.Redirect("/stats"));
         app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "telemetry" }));
         app.MapGet("/bus/events", (long after, int? limit, KernelDb kernelDb, EventLogStore eventLog) =>

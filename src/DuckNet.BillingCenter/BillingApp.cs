@@ -102,6 +102,7 @@ public static class BillingApp
         builder.Services.AddSingleton<IHostedService>(sp => new RunLoopHostedService(sp.GetRequiredService<SagaTimeoutWorker>().RunAsync));
 
         var app = builder.Build();
+        app.UseDuckNetLabCors();
         app.MapGet("/", () => Results.Redirect("/sagas"));
         app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "billing" }));
         app.MapGet("/sagas", (KernelDb kernelDb, BillingStore store) =>

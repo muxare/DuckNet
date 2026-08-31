@@ -15,7 +15,7 @@ dotnet run --project src/DuckNet.AppHost
 
 2. Open the Aspire dashboard URL printed at startup. `rabbitmq`, `telemetry`, `alarm`, `dashboard`, and `billing` should be healthy.
 3. Open **Traces**. Names are `{resource}: {span}` (`alarm: handle.Squeaked`). Filter `handle.Squeaked` — not `DuckNet.*`. Click a row: `simulate.squeak` / `ingest.squeak` → `append.log` → both Centers' `handle.Squeaked` share one `TraceId`. A duplicate is a second handle span on that trace tagged `ducknet.duplicate`. HTTP `GET`s are usually separate traces.
-4. Click the **dashboard** resource URL — Vue UI of `squeaks_by_duck_hour` plus per-shard queue/lag cards (TanStack Query polls every 2s). Rebuild from the button, or `POST /dashboard/rebuild`.
+4. Click the **dashboard** resource URL — Vue **Developer** view (Vue Flow graph of Centers, live offsets; click a circle for that Center's process; **Objects** for types; **All detail** for the full graph). **Read model** tab is `squeaks_by_duck_hour` plus per-shard queue/lag (TanStack Query polls every 2s). Rebuild from that tab, or `POST /dashboard/rebuild`. The SPA calls other Centers over CORS; DashboardCenter only publishes `GET /ui/catalog`.
 5. LoudDuck (`duck-1`) is on. `GET /metrics` on alarm or dashboard shows per-shard lag. `SHARD_COUNT=1` on a Center re-starves quiet keys.
 6. **Saga:** `GET` billing `/sagas`. Fast path: `POST` alarm `/alarms/duck-1/resolve` after a raise → saga `Released`. Slow path: leave it; `SAGA_TIMEOUT_SECONDS=15` → `Expired` + `FeeReleased` reason `Timeout`.
 7. Optional poison: `POST` Telemetry `/bus/poison`, then `GET` Alarm or Dashboard `/dlq`. Replay with `POST /dlq/{id}/replay?fix=true` or skip with `POST /dlq/{id}/skip`.

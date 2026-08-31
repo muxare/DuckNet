@@ -140,7 +140,7 @@ TelemetryCenter emits `Squeaked` v2 (`volumeDb`). AlarmCenter and DashboardCente
 dotnet run --project src/DuckNet.AppHost
 ```
 
-Aspire dashboard: `telemetry`, `alarm`, and `dashboard` healthy. Click the **dashboard** URL for the Vue UI (hour buckets, volume, rebuild). JSON remains at `/dashboard/summary`. Live traffic is v2. Mixed v1/v2 is the test fixture (`dotnet test --filter MixedVersion`).
+Aspire dashboard: `telemetry`, `alarm`, and `dashboard` healthy. Click the **dashboard** URL for the Vue UI (**Developer** maps by default; **Read model** for hour buckets, volume, rebuild). JSON remains at `/dashboard/summary`. Live traffic is v2. Mixed v1/v2 is the test fixture (`dotnet test --filter MixedVersion`).
 
 `GET /dashboard/summary` includes `totalVolumeDb`. `POST /dashboard/rebuild` still truncates and replays from offset 0.
 
@@ -174,7 +174,7 @@ dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 
 Agent shortcuts: `/run-demo`, `/mis-demo`.
 
-**What to look for (Aspire):** **Traces** — filter `handle.Squeaked`, click a row; `simulate.squeak` / `append.log` / both Centers share one `TraceId`. **Saga** — billing `GET /sagas`; fast `POST` alarm `/alarms/duck-1/resolve` → `Released`; wait 15s → `Expired`. Dashboard shard cards — LoudDuck's shard has queue depth and lag; other shards stay near 0. `GET /metrics` on alarm or dashboard. `/stats` `database` is still each Center's file, never `telemetry.db`.
+**What to look for (Aspire):** Open the **dashboard** resource URL — **Developer** is the default (Vue Flow graph of Centers, live offsets, click a circle for that Center's process, **Objects** for types, **All detail** for the whole graph). Hover a node, edge, or live number; press **T** to pin the card; **T** again on a highlighted word to drill down; **Esc** closes. **Read model** is the hour-bucket table. The Vue app polls each Center as a browser; DashboardCenter does not call the others. **Traces** — filter `handle.Squeaked`, click a row; `simulate.squeak` / `append.log` / both Centers share one `TraceId`. **Saga** — Billing drill-in or `GET /sagas`; fast resolve from the Alarm panel (or `POST` alarm `/alarms/duck-1/resolve`) → `Released`; wait 15s → `Expired`. LoudDuck's shard has queue depth and lag. `/stats` `database` is still each Center's file, never a shared DB.
 
 **What to look for (kernel):** `--hot-demo --shard-count 1` → every duck's `maxLagMs` is huge. `--shard-count 3` → only keys that hash onto the LoudDuck shard lag; others stay around the handle delay. With defenses on and no poison, `Published == Counted` and `Out of order == 0`.
 
@@ -188,7 +188,7 @@ src/DuckNet.EventBus/         # IEventBus + HTTP log adapter + upcasters + traci
 src/DuckNet.Kernel/           # durable primitives + console (shards, retry, DLQ CLI)
 src/DuckNet.TelemetryCenter/  # owns event_log; LoudDuck; POST /bus/poison
 src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised / AlarmResolved, DLQ, shards
-src/DuckNet.DashboardCenter/  # disposable read model + Vue UI + DLQ + shard lag
+src/DuckNet.DashboardCenter/  # disposable read model + Vue Developer maps + Read model + DLQ + shard lag
 src/DuckNet.BillingCenter/    # own DB, saga, timeout compensation, FeeReserved / FeeReleased
 tests/
 infra/docker/                 # one image per Center

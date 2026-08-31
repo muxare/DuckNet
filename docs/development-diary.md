@@ -2,6 +2,116 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-31 — Inspect pin: Enter + chip, drop T
+
+### What changed
+Bare **T** collided with Chrome’s new-tab chord (`⌘T` / `Ctrl+T` still report `key: "t"`) and with letter-key extensions. Pin is now unmodified **Enter**, plus a **Pin** chip on the preview (top-left, `pointer-events: auto`). Leave waits 350ms so the chip is reachable; hovering the chip holds the card. Modified Enter is ignored.
+
+### Architecture impact
+```mermaid
+sequenceDiagram
+  participant User
+  participant Preview
+  participant Stack
+  User->>Preview: hover
+  User->>Preview: Enter or Pin
+  Preview->>Stack: pin
+  Note over Preview: Cmd/Ctrl+T is not a pin key
+```
+
+### How to test
+- `cd src/DuckNet.DashboardCenter/ui && npm test && npm run build`
+- Hover a Center → **Enter** pins, no new tab. **Pin** chip also pins. **T** does nothing. **Esc** still pops.
+
+## 2026-08-31 — Inspect pin + process-graph overlap
+
+### What changed
+**T** no longer drops the card: pinned inspect lived in `.dn-inspect-pin { position: relative }`, which overrode `position: fixed` and sent the card into document flow (looked like a z-index miss). Cards now sit in a `pointer-events: none` overlay layer; pins re-enable pointer events. Decision diamonds were laid out as 72px tall while the rotated square is ~148px, so they ate neighboring nodes; Dagre size and rank/node gaps match the visual.
+
+### How to test
+- `cd src/DuckNet.DashboardCenter/ui && npm test && npm run build`
+- Hover a process node, **T** — card stays, **X** / **Esc** close. All detail: diamond no longer overlaps inbox / Drop.
+
+## 2026-08-31 — BG3-style inspect docs on the Developer map
+
+### What changed
+Developer maps grow a hover inspect overlay. Hover a Center, process node, labeled edge, or live metric; **T** pins the card; wiki `[[terms]]` inside a pin are hoverable and **T** stacks another card. **Esc** pops. Live numbers from `/stats` splice into the card when the hover had a Center scope. Glossary is a typed corpus in the Vue bundle — not fetched architecture markdown. Click still drills into a Center.
+
+### Architecture impact
+```mermaid
+sequenceDiagram
+  participant User
+  participant Map
+  participant Preview
+  participant Stack
+  User->>Map: hover node or metric
+  Map->>Preview: card, pointer-events none
+  User->>Preview: T
+  Preview->>Stack: pin, interactive
+  User->>Stack: hover wiki term
+  Stack->>Preview: nested preview
+  User->>Preview: T
+  Preview->>Stack: pin nested
+  User->>Stack: Esc
+  Stack-->>User: pop
+```
+
+### How to test
+- `cd src/DuckNet.DashboardCenter/ui && npm test && npm run build`
+- Aspire dashboard URL: hover Alarm → live offset in the card; **T**; hover **Inbox**; **T**; **Esc**. Click still opens the Center. Type in ingest without pinning. Read model unchanged.
+
+### Follow-ups
+**Parked:** Read-model cell inspect, hash `#inspect=`, glossary search, scraping `docs/architecture/*.md`.
+
+## 2026-08-31 — Developer maps as Vue Flow graphs
+
+### What changed
+The Developer SPA now uses Vue Flow instead of cards and a vertical list. **Overview** (`#developer`) is circular Center nodes plus labeled communication edges. Click a Center for its **process** flowchart; **Objects** is a type-level collaboration graph on the same page. **All detail** (`#developer/all`) is one grouped canvas of every pipeline. Topology stays as-built: events only, `IEventBus` is a port, no Center-to-Center arrows.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  overview["Overview graph"] -->|"click Center"| process["Process diagram"]
+  process -->|"toggle Objects"| objects["Object graph"]
+  overview -->|"All detail"| all["System canvas"]
+```
+
+### How to test
+- `cd src/DuckNet.DashboardCenter/ui && npm run build`
+- `dotnet test tests/DuckNet.DashboardCenter.Tests`
+- Aspire dashboard URL: overview circles + live offsets; click Alarm for process + live resolve; toggle Objects; `#developer/all`; Read model still rebuilds.
+
+### Follow-ups
+**Parked:** follow-one-event / TraceId strip, SSE, RabbitMQ management iframe (unchanged).
+
+## 2026-08-30 — Developer maps on the Dashboard Vue app
+
+### What changed
+The Dashboard SPA now has two jobs. **Developer** (default, `#developer`) is a living system map: overview of Centers + event arrows, drill-in to one Center's pipeline, and an all-detail canvas. Live numbers come from each Center's existing `/stats` (browser CORS). DashboardCenter only publishes `GET /ui/catalog` (Aspire `UI_*_URL`). **Read model** (`#read-model`) is the previous hour-bucket table.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  SPA[Vue SPA]
+  Cat["GET /ui/catalog"]
+  Tel[Telemetry /stats]
+  Alm[Alarm /stats]
+  Dash[Dashboard /stats]
+  Bil[Billing /stats]
+  SPA --> Cat
+  SPA --> Dash
+  SPA -->|CORS| Tel
+  SPA -->|CORS| Alm
+  SPA -->|CORS| Bil
+```
+
+### How to test
+- `dotnet test tests/DuckNet.DashboardCenter.Tests`
+- Aspire: `dotnet run --project src/DuckNet.AppHost` — open the dashboard URL. Overview shows live offsets; click Alarm for internals + alarms; All detail scrolls; Read model still rebuilds.
+
+### Follow-ups
+**Parked:** follow-one-event / TraceId strip, SSE, RabbitMQ management iframe, pan/zoom library.
+
 ## 2026-08-30 — ReviewFlow job summaries and structured objects
 
 ### What changed

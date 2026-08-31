@@ -39,6 +39,7 @@ public class CenterIsolationTests
             Assert.DoesNotContain("alarm.db", text, StringComparison.Ordinal);
             Assert.DoesNotContain("DuckNet.TelemetryCenter", text, StringComparison.Ordinal);
             Assert.DoesNotContain("DuckNet.AlarmCenter", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("DuckNet.BillingCenter", text, StringComparison.Ordinal);
         }
     }
 

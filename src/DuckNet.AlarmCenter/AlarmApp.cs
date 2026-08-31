@@ -92,6 +92,7 @@ public static class AlarmApp
         builder.Services.AddSingleton<IHostedService>(sp => new RunLoopHostedService(sp.GetRequiredService<RemoteOutboxDispatcher>().RunAsync));
 
         var app = builder.Build();
+        app.UseDuckNetLabCors();
         app.MapGet("/", () => Results.Redirect("/alarms"));
         app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "alarm" }));
         app.MapGet("/alarms", (KernelDb kernelDb, AlarmStore store) =>

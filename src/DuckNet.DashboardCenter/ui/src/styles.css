@@ -70,3 +70,422 @@ body {
 .volume-bar .progress-bar {
   background: var(--dn-duck);
 }
+
+.map-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 0;
+  border-top: 3px solid var(--dn-duck);
+  border-radius: 0.4rem;
+  box-shadow: 0 0.35rem 0.9rem rgba(27, 36, 48, 0.08);
+  padding: 1rem 1.1rem;
+  color: inherit;
+}
+
+.map-card:hover {
+  outline: 2px solid var(--dn-duck);
+}
+
+.map-card-bus {
+  border-top-color: #64748b;
+  background: #f8fafc;
+}
+
+.map-card-alarm {
+  border-top-color: #c2410c;
+}
+
+.map-card-bill {
+  border-top-color: #1d4ed8;
+}
+
+.map-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  color: #6c757d;
+}
+
+.map-title {
+  font-weight: 700;
+  color: var(--dn-ink);
+  font-size: 1.15rem;
+}
+
+.map-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+
+.dn-flow-shell {
+  position: relative;
+  width: 100%;
+  border-radius: 0.4rem;
+  overflow: hidden;
+  background: #efebe3;
+}
+
+.dn-flow-shell-overview {
+  height: min(70vh, 36rem);
+}
+
+.dn-flow-shell-center {
+  height: 32rem;
+}
+
+.dn-flow-shell-all {
+  height: min(80vh, 44rem);
+}
+
+.vue-flow {
+  background: #efebe3;
+}
+
+.vue-flow__node {
+  cursor: pointer;
+  overflow: visible;
+}
+
+.vue-flow__node.selected {
+  box-shadow: none;
+}
+
+.vue-flow__node-center,
+.vue-flow__node-port,
+.vue-flow__node-step,
+.vue-flow__node-decision,
+.vue-flow__node-store,
+.vue-flow__node-drop,
+.vue-flow__node-object,
+.vue-flow__node-group {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+.vue-flow__node-group {
+  cursor: pointer;
+}
+
+.vue-flow__handle {
+  width: 6px;
+  height: 6px;
+  background: var(--dn-ink);
+  border: none;
+  opacity: 0.35;
+}
+
+.dn-circle {
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--accent, var(--dn-duck));
+  box-shadow: 0 0.35rem 0.9rem rgba(27, 36, 48, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.7rem;
+}
+
+.vue-flow__node-center:hover .dn-circle,
+.vue-flow__node-port:hover .dn-port,
+.vue-flow__node-group:hover .dn-group {
+  box-shadow: 0 0 0 3px var(--accent, var(--dn-duck));
+}
+
+.dn-port {
+  width: 210px;
+  min-height: 80px;
+  border-radius: 0.45rem;
+  background: #f8fafc;
+  border: 2px dashed var(--accent, #64748b);
+  box-shadow: 0 0.25rem 0.7rem rgba(27, 36, 48, 0.08);
+  padding: 0.55rem 0.7rem;
+  text-align: center;
+}
+
+.dn-circle-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.62rem;
+  color: #6c757d;
+  line-height: 1.2;
+}
+
+.dn-circle-title {
+  font-weight: 700;
+  color: var(--dn-ink);
+  font-size: 0.82rem;
+  line-height: 1.15;
+  margin: 0.15rem 0 0.25rem;
+}
+
+.dn-circle-lines {
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+  color: #495057;
+  line-height: 1.25;
+}
+
+.dn-circle-error {
+  font-size: 0.62rem;
+  color: #c2410c;
+  line-height: 1.2;
+}
+
+.dn-step,
+.dn-store,
+.dn-object {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 0.35rem;
+  padding: 0.4rem 0.55rem;
+  box-shadow: 0 0.15rem 0.4rem rgba(27, 36, 48, 0.06);
+}
+
+.dn-store {
+  border-left: 3px solid var(--dn-ink);
+}
+
+.dn-object {
+  border-top: 3px solid var(--dn-ink);
+}
+
+.dn-step-label,
+.dn-object-label {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--dn-ink);
+  line-height: 1.2;
+}
+
+.dn-object-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.dn-step-note {
+  font-size: 0.68rem;
+  color: #6c757d;
+  margin-top: 0.1rem;
+}
+
+.dn-decision {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dn-decision-inner {
+  width: 104px;
+  height: 104px;
+  transform: rotate(45deg);
+  background: #fff;
+  border: 1px solid #dee2e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0.15rem 0.4rem rgba(27, 36, 48, 0.06);
+}
+
+.dn-decision-inner .dn-step-label {
+  transform: rotate(-45deg);
+  text-align: center;
+  font-size: 0.72rem;
+  padding: 0.2rem;
+}
+
+.dn-drop {
+  background: #f8d7da;
+  color: #842029;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 0.3rem;
+  padding: 0.3rem 0.5rem;
+}
+
+.dn-group {
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid #d6d0c4;
+  border-top: 3px solid var(--accent, var(--dn-duck));
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.dn-group-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.62rem;
+  color: #6c757d;
+}
+
+.dn-group-title {
+  font-weight: 700;
+  color: var(--dn-ink);
+  font-size: 0.9rem;
+}
+
+.dn-group-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.7rem;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: #495057;
+}
+
+.vue-flow__controls {
+  box-shadow: 0 0.2rem 0.5rem rgba(27, 36, 48, 0.12);
+  border-radius: 0.3rem;
+  overflow: hidden;
+}
+
+.dn-term {
+  border-bottom: 1px dotted #8a7a4a;
+  cursor: help;
+  color: inherit;
+}
+
+.dn-inspect .dn-term {
+  color: #6b4f12;
+  font-weight: 600;
+}
+
+.dn-inspect-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+.dn-inspect {
+  position: absolute;
+  width: 22rem;
+  background: #fffdf6;
+  border: 1px solid #d6d0c4;
+  border-top: 3px solid var(--dn-duck);
+  border-radius: 0.4rem;
+  box-shadow: 0 0.5rem 1.4rem rgba(27, 36, 48, 0.18);
+  padding: 0.7rem 0.85rem 0.8rem;
+  color: var(--dn-ink);
+}
+
+.dn-inspect-preview {
+  pointer-events: none;
+  z-index: 2;
+}
+
+.dn-inspect-pin {
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.dn-inspect-kicker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.dn-inspect-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.62rem;
+  color: #6c757d;
+  padding-right: 1.4rem;
+}
+
+.dn-inspect-pin-btn {
+  pointer-events: auto;
+  flex-shrink: 0;
+  border: 1px solid #d6d0c4;
+  background: #fff;
+  color: var(--dn-ink);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 0.25rem;
+  padding: 0.12rem 0.4rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.dn-inspect-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1.2;
+  margin: 0.1rem 0 0.35rem;
+}
+
+.dn-inspect-summary {
+  font-size: 0.82rem;
+  color: #343a40;
+  margin-bottom: 0.45rem;
+}
+
+.dn-inspect-body {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #343a40;
+}
+
+.dn-inspect-live {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.7rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  background: #f4f1ea;
+  border-radius: 0.25rem;
+  padding: 0.3rem 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.dn-inspect-hint {
+  font-size: 0.72rem;
+  color: #6c757d;
+  font-style: italic;
+  margin-bottom: 0.4rem;
+}
+
+.dn-inspect-code {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  font-size: 0.7rem;
+  color: #6c757d;
+}
+
+.dn-inspect-code code {
+  display: block;
+  color: var(--dn-ink);
+  font-size: 0.68rem;
+}
+
+.dn-inspect-x {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.35rem;
+  border: 0;
+  background: transparent;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: #6c757d;
+  padding: 0.15rem 0.35rem;
+}

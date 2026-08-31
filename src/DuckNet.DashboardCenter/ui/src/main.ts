@@ -3,6 +3,9 @@ import { VueQueryPlugin, QueryClient } from "@tanstack/vue-query";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
+import "@vue-flow/core/dist/style.css";
+import "@vue-flow/core/dist/theme-default.css";
+import "@vue-flow/controls/dist/style.css";
 import "./styles.css";
 import App from "./App.vue";
 

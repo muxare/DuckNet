@@ -13,17 +13,22 @@ namespace DuckNet.EventBus;
 /// (or <c>DUCKNET_BUS_TOPIC</c>); one subscription per consumer group.
 /// At-least-once: complete after the subscriber requests the next envelope
 /// (or dispose); abandon on cancel → redelivery. Inbox — not this type — is
-/// the dedupe. Topology (topic + subscriptions) is created when the
-/// connection string has Manage; Bicep owns it in Azure.
+/// the dedupe. Receive is bounded (channel capacity = prefetch) so a slow
+/// subscriber back-pressures the broker instead of letting PeekLock locks
+/// expire behind an unbounded buffer. Topology (topic + subscriptions) is
+/// created when the connection string has Manage; Bicep owns it in Azure.
 /// </summary>
 public sealed class ServiceBusEventBus : IEventBus, IAsyncDisposable
 {
     public const string DefaultTopic = "ducknet-events";
 
+    private const int PrefetchCount = 32;
+
     private readonly string _topic;
     private readonly ServiceBusClient _client;
     private readonly ServiceBusAdministrationClient? _admin;
     private readonly ServiceBusSender _sender;
+    private volatile bool _topicEnsured;
     private bool _disposed;
 
     public ServiceBusEventBus(string connectionString, string? topic = null)
@@ -78,7 +83,7 @@ public sealed class ServiceBusEventBus : IEventBus, IAsyncDisposable
                 await _sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
                 return;
             }
-            catch when (!_disposed)
+            catch (ServiceBusException ex) when (ex.IsTransient && !_disposed)
             {
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, 2000));
@@ -91,10 +96,11 @@ public sealed class ServiceBusEventBus : IEventBus, IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(consumerGroup);
-        var deliveries = Channel.CreateUnbounded<Delivery>(new UnboundedChannelOptions
+        var deliveries = Channel.CreateBounded<Delivery>(new BoundedChannelOptions(PrefetchCount)
         {
             SingleReader = true,
-            SingleWriter = false
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
         });
         _ = ConsumeLoopAsync(consumerGroup, deliveries.Writer, cancellationToken);
         return ReadDeliveriesAsync(deliveries.Reader, cancellationToken);
@@ -120,52 +126,72 @@ public sealed class ServiceBusEventBus : IEventBus, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var delay = TimeSpan.FromMilliseconds(200);
-        while (!cancellationToken.IsCancellationRequested && !_disposed)
+        try
         {
-            ServiceBusReceiver? receiver = null;
-            try
+            while (!cancellationToken.IsCancellationRequested && !_disposed)
             {
-                await EnsureSubscriptionAsync(consumerGroup, cancellationToken).ConfigureAwait(false);
-                receiver = _client.CreateReceiver(_topic, SubscriptionName(consumerGroup), new ServiceBusReceiverOptions
+                ServiceBusReceiver? receiver = null;
+                try
                 {
-                    ReceiveMode = ServiceBusReceiveMode.PeekLock,
-                    PrefetchCount = 32
-                });
-
-                delay = TimeSpan.FromMilliseconds(200);
-                while (!cancellationToken.IsCancellationRequested && !_disposed)
-                {
-                    var message = await receiver
-                        .ReceiveMessageAsync(TimeSpan.FromSeconds(5), cancellationToken)
-                        .ConfigureAwait(false);
-                    if (message is null)
+                    await EnsureSubscriptionAsync(consumerGroup, cancellationToken).ConfigureAwait(false);
+                    receiver = _client.CreateReceiver(_topic, SubscriptionName(consumerGroup), new ServiceBusReceiverOptions
                     {
-                        continue;
+                        ReceiveMode = ServiceBusReceiveMode.PeekLock,
+                        PrefetchCount = PrefetchCount
+                    });
+
+                    delay = TimeSpan.FromMilliseconds(200);
+                    while (!cancellationToken.IsCancellationRequested && !_disposed)
+                    {
+                        var message = await receiver
+                            .ReceiveMessageAsync(TimeSpan.FromSeconds(5), cancellationToken)
+                            .ConfigureAwait(false);
+                        if (message is null)
+                        {
+                            continue;
+                        }
+
+                        var json = Encoding.UTF8.GetString(message.Body.ToArray());
+                        EventEnvelope envelope;
+                        try
+                        {
+                            envelope = EnvelopeJson.Deserialize(json);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // Poison body: dead-letter it and keep the receiver;
+                            // tearing down the connection cannot fix the message.
+                            await TryDeadLetterAsync(receiver, message, "envelope-parse-failed", ex.Message)
+                                .ConfigureAwait(false);
+                            continue;
+                        }
+
+                        await writer.WriteAsync(new Delivery(envelope, message, receiver), cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch when (!_disposed)
+                {
+                    if (receiver is not null)
+                    {
+                        await receiver.DisposeAsync().ConfigureAwait(false);
                     }
 
-                    var json = Encoding.UTF8.GetString(message.Body.ToArray());
-                    var envelope = EnvelopeJson.Deserialize(json);
-                    await writer.WriteAsync(new Delivery(envelope, message, receiver), cancellationToken)
-                        .ConfigureAwait(false);
+                    await Task.Delay(delay, CancellationToken.None).ConfigureAwait(false);
+                    delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, 2000));
                 }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch when (!_disposed)
-            {
-                if (receiver is not null)
-                {
-                    await receiver.DisposeAsync().ConfigureAwait(false);
-                }
-
-                await Task.Delay(delay, CancellationToken.None).ConfigureAwait(false);
-                delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, 2000));
             }
         }
-
-        writer.TryComplete();
+        finally
+        {
+            // Every exit path must complete the channel, or the subscriber's
+            // await foreach hangs (e.g. ObjectDisposedException after DisposeAsync).
+            writer.TryComplete();
+        }
     }
 
     private static async IAsyncEnumerable<EventEnvelope> ReadDeliveriesAsync(
@@ -206,7 +232,9 @@ public sealed class ServiceBusEventBus : IEventBus, IAsyncDisposable
 
     private async Task EnsureTopicAsync(CancellationToken cancellationToken)
     {
-        if (_admin is null)
+        // Once per bus, not per message: TopicExistsAsync is a throttled
+        // management-plane call, and an existing topic stays existing.
+        if (_admin is null || _topicEnsured)
         {
             return;
         }
@@ -226,6 +254,8 @@ public sealed class ServiceBusEventBus : IEventBus, IAsyncDisposable
         {
             // Race with another publisher.
         }
+
+        _topicEnsured = true;
     }
 
     private async Task EnsureSubscriptionAsync(string consumerGroup, CancellationToken cancellationToken)
@@ -271,6 +301,22 @@ public sealed class ServiceBusEventBus : IEventBus, IAsyncDisposable
         catch
         {
             // Redelivery + inbox covers a lost complete.
+        }
+    }
+
+    private static async Task TryDeadLetterAsync(
+        ServiceBusReceiver receiver,
+        ServiceBusReceivedMessage message,
+        string reason,
+        string description)
+    {
+        try
+        {
+            await receiver.DeadLetterMessageAsync(message, reason, description).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Lock expiry redelivers; MaxDeliveryCount dead-letters it eventually.
         }
     }
 

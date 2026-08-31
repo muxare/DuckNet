@@ -13,7 +13,7 @@ Toy domain, real distributed architecture. Smart rubber ducks emit facts; Center
 
 ## Git workflow
 
-- One branch per step: `step-0`, `step-1`, …
+- One branch per step: `step-0`, `step-1`, … (Phase D: `step-12a`, `step-12b`, `step-12c`)
 - Implement on the branch; merge to `main` only when acceptance criteria pass.
 - Tag on merge: `git tag step-N`
 - Commit format: `feat(step-N): description`
@@ -147,6 +147,8 @@ Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; c
 | 9 | complete | `step-9` → `main` |
 | 10 | complete | `step-10` → `main` |
 | 11 | complete | `step-11` → `main` |
-| 12 | planned | Azure — see [ImplementationPlan.md](./ImplementationPlan.md) |
+| 12a | complete | `step-12a` → `main` |
+| 12b | planned | Azure-ready IaC + adapters (no live deploy) |
+| 12c | planned | First Azure environment (needs subscription) |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

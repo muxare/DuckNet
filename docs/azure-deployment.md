@@ -1,6 +1,6 @@
 # Azure deployment — learning notes
 
-Learning document, not as-built. DuckNet today runs on Aspire + SQLite + an HTTP event log (system of record) + RabbitMQ behind `IEventBus` (live fan-out). Azure is **not implemented** (`infra/bicep/` does not exist yet). Step 12 in [ImplementationPlan.md](../ImplementationPlan.md) is the production-shaped target. This file explains **how** a system like this maps to Azure, **what** is industry-standard in 2026 given the Aspire inner loop, **how** that standard moved since 2018, and **what it costs** as a lab.
+Learning document, not as-built. DuckNet today runs on Aspire + SQLite + an HTTP event log (system of record) + RabbitMQ behind `IEventBus` (live fan-out). Azure is **not implemented** (`infra/bicep/` does not exist yet). Phase D in [ImplementationPlan.md](../ImplementationPlan.md) is split: **12a** CD/identity contract, **12b** Bicep + adapters, **12c** first live environment. This file explains **how** a system like this maps to Azure, **what** is industry-standard in 2026 given the Aspire inner loop, **how** that standard moved since 2018, and **what it costs** as a lab. The pipeline/OIDC spec is [cd-contract.md](./cd-contract.md), not this file.
 
 You do **not** break the system apart to put it on Azure. It is already four processes, four databases, a broker, and one integration seam (`IEventBus`). Aspire is the local orchestrator. Azure replaces the stand-ins: SQLite → PostgreSQL, HTTP `event_log` → Event Hubs, RabbitMQ → Service Bus.
 
@@ -48,7 +48,7 @@ How the rest of the stack maps, in order of how common it is in industry:
 - **Messaging — Service Bus topics + subscriptions (standard for .NET business events).** One topic, one subscription per consumer group (`alarm-center`, `dashboard-projector`, `billing-center`). That is what NServiceBus/MassTransit default to on Azure. Event Hubs is standard for high-throughput *logs* (IoT, telemetry, replay, partition keys) — the Telia lesson — not for the median four-service domain. **Using both** (Hubs as system of record, Service Bus as fan-out) is a valid CQRS pattern and matches Step 12, but it is heavier than most shops this size. Locally, HTTP `EVENT_LOG_URL` is the log/replay path; RabbitMQ (Step 11) is the live `IEventBus`. Azure replaces those two roles, not Center handlers.
 - **Data — Azure SQL or PostgreSQL Flexible Server, database per Center (standard).** One server, separate databases, is normal. Cosmos is the standard when partition key / RU / global distribution is the point. SQLite is local-only.
 - **Identity / telemetry — Managed Identity + Key Vault + Application Insights (standard).** Connection strings are not in GitHub secrets long-term; OpenTelemetry already in Aspire just changes exporter.
-- **CI/CD — GitHub Actions OIDC → ACR → update one Container App (standard).** That is the *shape* of [`deploy-center.yml`](../.github/workflows/deploy-center.yml) (today: per-Center image to GHCR). `azd up` is Microsoft’s shortcut from AppHost; many enterprises still write Bicep/Terraform by hand. Independent per-Center deploy is the microservice norm; deploying the whole compose stack as one unit is the exception (Option A below).
+- **CI/CD — GitHub Actions OIDC → ACR → update one Container App (standard).** That is the *shape* of [`deploy-center.yml`](../.github/workflows/deploy-center.yml) (today: per-Center image to GHCR). CD stays in GitHub, not Azure DevOps — [decision](./decisions/cd-github-actions-vs-azure-devops.md). `azd up` is Microsoft’s shortcut from AppHost; many enterprises still write Bicep/Terraform by hand. Independent per-Center deploy is the microservice norm; deploying the whole compose stack as one unit is the exception (Option A below).
 
 **Aspire-native path vs enterprise-legacy path**
 
@@ -189,9 +189,9 @@ Map [`AppHost Program.cs`](../src/DuckNet.AppHost/Program.cs) 1:1: one Container
 
 App Service variant of B: one Linux **B1** plan (~$13) hosting four Web Apps, Always On, SQLite under `/home`. Cheaper compute, less “one Center = one scale unit.” Same HTTP wiring.
 
-## Option C — Production-shaped (locked in as Step 12)
+## Option C — Production-shaped (locked in as Steps 12b–12c)
 
-This is the roadmap in [ImplementationPlan.md](../ImplementationPlan.md) § Step 12. Same Center boundaries; swap implementations behind `IEventBus`.
+This is the Azure *runtime* target in [ImplementationPlan.md](../ImplementationPlan.md) § 12b (code) / 12c (live). Same Center boundaries; swap implementations behind `IEventBus`. CD/identity is 12a ([cd-contract.md](./cd-contract.md)).
 
 ```mermaid
 flowchart TB
@@ -268,4 +268,4 @@ Aspire (`azd up`) can provision Option B/C from the existing AppHost. Bicep is t
 - **Prove the Telia-shaped story (independent deploy, broker, replay, no shared DB):** Option C. Step 11 already proved the local `IEventBus` port with RabbitMQ; Step 12 swaps that adapter to Azure.
 - **Skip AKS** for this repo. It adds cluster tax without teaching Center isolation.
 
-When Step 12 is implemented: Bicep skeleton, OIDC in `deploy-center.yml`, Postgres provider, then `IEventBus` Azure adapter — in that order, with AppHost remaining the local demo.
+When Phase D is implemented: **12a** contract (done on `step-12a`) → **12b** Bicep skeleton + OIDC-ready YAML + Postgres provider + `IEventBus` Azure adapter → **12c** first `dev` apply. AppHost remains the local demo. Do not skip 12a to “just azd up.”

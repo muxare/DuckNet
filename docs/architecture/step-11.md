@@ -85,7 +85,7 @@ flowchart TB
   ALM -.->|never calls| SAGA
 ```
 
-**Intentionally absent:** Azure Service Bus (`ServiceBusEventBus` is Step 12), MCP ops server.
+**Intentionally absent:** Azure Service Bus (`ServiceBusEventBus` is Step 12b), MCP ops server.
 
 ## Execution — one squeak onto the broker
 

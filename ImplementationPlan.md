@@ -10,21 +10,22 @@
 
 DuckNet is a stepwise .NET 10 learning/production-shaped demo: smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing databases. Each step adds one distributed-systems concept while keeping the demo runnable end-to-end.
 
-**As-built (2026-08-31):** Steps **0–11 are on `main`**. Local demo is Aspire + four Centers + SQLite per Center + HTTP `event_log` (system of record) + RabbitMQ behind `IEventBus`. Azure (`infra/bicep/`) is not started — that is Step 12. Current layout: [CLAUDE.md](./CLAUDE.md) / [README.md](./README.md). As-built diagrams: [docs/architecture/](./docs/architecture/).
+**As-built (2026-08-31):** Steps **0–11 are on `main`**. Local demo is Aspire + four Centers + SQLite per Center + HTTP `event_log` (system of record) + RabbitMQ behind `IEventBus`. Phase D is split: **12a** CD/identity contract (docs), **12b** Azure-ready IaC + adapters (no live deploy), **12c** first Azure environment. Current layout: [CLAUDE.md](./CLAUDE.md) / [README.md](./README.md). As-built diagrams: [docs/architecture/](./docs/architecture/).
 
 Deviations from locks in this plan:
 
 - **PostgreSQL from Step 8** was deferred. SQLite remains through Step 11 (starvation is at the worker/channel layer; see [step-8.md](./docs/architecture/step-8.md)). Azure still targets PostgreSQL.
 - **Git tags** exist only for `step-0` and `step-1`; later steps were merged without tags.
 - **MCP ops** (`ducknet-mcp-ops` / `DuckNet.Mcp`) is still planned, not built.
-- **`deploy-center.yml`** builds and pushes GHCR images; it does not deploy to Azure.
+- **`deploy-center.yml`** builds and pushes GHCR images; it does not deploy to Azure (12c).
+- **Phase D** was one “Step 12 Azure” blob; it is now **12a / 12b / 12c** so identity/CD can lock before any billed resources exist.
 
 | Phase | Steps | Outcome |
 |-------|-------|---------|
 | **A — The Kernel** | 0–3 | At-least-once, idempotency, per-key ordering, durable log + outbox |
 | **B — Distributed** | 4–6 | Multi-Center Aspire host, CQRS projections, schema evolution |
 | **C — Production pain** | 7–11 | DLQ, hot partitions, tracing, sagas, broker swap |
-| **D — Cloud & ops** | 12+ | Azure hosting, per-Center CI/CD, CCA-F-aligned agent workflows |
+| **D — Cloud & ops** | 12a–12c | CD contract (GitHub OIDC) → Azure-ready IaC/adapters → first live environment |
 
 **Interview milestone:** Steps 0–4 before Epiroc interview (~4–5 evenings).
 
@@ -97,9 +98,10 @@ DuckNet/
 │   └── workflows/
 │       ├── ci.yml                    # build + test (Step 0)
 │       ├── claude-review.yml         # ReviewFlow triage + specialists (Step 0)
-│       └── deploy-center.yml         # per-Center deploy (Step 4+)
+│       ├── deploy-center.yml         # per-Center GHCR (Step 4+); Azure job from 12c
+│       └── infra.yml                 # 12b compile / 12c dispatch apply
 ├── infra/
-│   ├── bicep/                        # Step 12 — Azure resources
+│   ├── bicep/                        # Step 12b — Azure resources (apply in 12c)
 │   └── docker/                       # one Dockerfile per Center
 ├── CLAUDE.md                         # architecture rules for humans + agents
 ├── .claude/
@@ -271,7 +273,7 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Implement:**
 
-1. **SQLite first** (locked in for Steps 3–7) — single file per Center for simplicity. **PostgreSQL from Step 8** was the original lock for concurrent writers; **deferred** — SQLite remains through Step 11 (see [step-8.md](./docs/architecture/step-8.md)). Azure still swaps to PostgreSQL in Step 12.
+1. **SQLite first** (locked in for Steps 3–7) — single file per Center for simplicity. **PostgreSQL from Step 8** was the original lock for concurrent writers; **deferred** — SQLite remains through Step 11 (see [step-8.md](./docs/architecture/step-8.md)). Azure still swaps to PostgreSQL in **12b (code) / 12c (live)**.
 
    **`event_log`** table:
    ```sql
@@ -625,90 +627,191 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Phase C tag:** `step-11-production-shaped`
 
-**Azure note:** Step 11 proves the port locally with RabbitMQ. Step 12 adds `ServiceBusEventBus` for Azure — same empty Center diff constraint applies again.
+**Azure note:** Step 11 proves the port locally with RabbitMQ. Step 12b adds `ServiceBusEventBus` for Azure — same empty Center diff constraint applies again. Live Azure is 12c.
 
 ---
 
 ## Phase D — Cloud, CI/CD & certification-shaped ops
 
-### Step 12 (future) — Host on Azure
+One story (same Centers, swap infra behind `IEventBus`) but **three mergeable units**. Identity and “where CD lives” are a different risk from Bicep/adapters, which are a different risk from a billed Azure environment.
 
-**Goal:** Same Center boundaries and event-driven seams as local — swap infrastructure implementations, not Center code. This mirrors the Step 11 punchline at cloud scale.
+| Sub-step | Branch / tag | Ships | Azure spend | Human Azure account? |
+|----------|--------------|-------|-------------|----------------------|
+| **12a** CD contract | `step-12a` | Decisions + identity/CD spec + this Phase D split | $0 | No |
+| **12b** Azure-ready | `step-12b` | Bicep + EventBus/Postgres adapters + workflows that **skip** Azure when OIDC vars are missing | $0 | No |
+| **12c** First environment | `step-12c` | Entra app + federated creds + `dev` RG apply + live Center revisions | Yes (deallocate between demos) | **Yes** — see [human prerequisites](./docs/cd-contract.md#human-prerequisites-block-12c-not-12a12b) |
 
-**Learning notes:** options, 2018–2026 industry path, and lab pricing live in [docs/azure-deployment.md](./docs/azure-deployment.md). That file is not an implementation spec — this section remains the locked Azure target.
+**Learning notes** (options, 2018–2026 path, lab pricing): [docs/azure-deployment.md](./docs/azure-deployment.md). That file is not the implementation spec.
 
-**Architecture decisions (locked in for Azure path):**
+**CD spec** (OIDC, two identity planes, pipeline map): [docs/cd-contract.md](./docs/cd-contract.md).
 
-| Local (Steps 3–11) | Azure target | What changes |
-|--------------------|--------------|--------------|
-| SQLite per Center | **Azure Database for PostgreSQL Flexible Server** — one server, **separate database per Center** (Rule 2 preserved) | Connection strings via Key Vault; EF migrations per Center |
-| Telemetry-owned append log | **Azure Event Hubs** (partition key = `duckId`) | Log write path moves from SQL table to Event Hub producer in TelemetryCenter; replay = consume from beginning |
-| RabbitMQ | **Azure Service Bus** (topics + subscriptions = consumer groups) | New `ServiceBusEventBus : IEventBus`; Center handlers unchanged |
-| Aspire AppHost (local) | **Azure Container Apps** — one app per Center | Container images from CI; KEDA scale on queue lag (Step 8 metrics) |
-| OpenTelemetry → Aspire dashboard | **Azure Monitor / Application Insights** | Same OTel SDK; different exporter endpoint |
-| DLQ table | **Service Bus dead-letter sub-queue** + optional blob archive for inspection | Retry policy moves to SDK + platform |
-| Secrets in appsettings | **Azure Key Vault** + **Managed Identity** | No secrets in repo or GitHub env plaintext |
+**Decisions:** [GitHub Actions vs Azure DevOps](./docs/decisions/cd-github-actions-vs-azure-devops.md) · [Bicep vs Pulumi](./docs/decisions/iac-bicep-vs-pulumi.md).
 
-**What does *not* change:**
+As-built for 12a: [docs/architecture/step-12a.md](./docs/architecture/step-12a.md). 12b/12c diagrams after those steps pass.
 
-- Center `.csproj` projects and handler logic (same constraint as Step 11).
+### Architecture decisions (locked for the Azure path)
+
+| Local (Steps 3–11) | Azure target (12c) | What changes | When |
+|--------------------|--------------------|--------------|------|
+| SQLite per Center | **Azure Database for PostgreSQL Flexible Server** — one server, **separate database per Center** (Rule 2) | Connection strings in Key Vault; provider swap | Code 12b, live 12c |
+| Telemetry-owned append log | **Azure Event Hubs** (partition key = `duckId`) | Log write path → Event Hub producer; replay = consume from beginning | Code 12b, live 12c |
+| RabbitMQ | **Azure Service Bus** (topics + subscriptions = consumer groups) | `ServiceBusEventBus : IEventBus`; Center handlers unchanged | Code 12b, live 12c |
+| Aspire AppHost (local) | **Azure Container Apps** — one app per Center | Images from CD; KEDA on queue lag | Live 12c (AppHost stays for laptop) |
+| OTel → Aspire dashboard | **Azure Monitor / Application Insights** | Same SDK; exporter endpoint | Live 12c |
+| DLQ table | **Service Bus dead-letter sub-queue** + optional blob archive | Retry policy → SDK + platform | Code 12b, live 12c |
+| Secrets in appsettings | **Key Vault** + **Managed Identity** (runtime) and **OIDC** (pipeline) | No secrets in repo; no `AZURE_CLIENT_SECRET` | Spec 12a, live 12c |
+| `deploy-center.yml` → GHCR | Same + **ACR** + `az containerapp update` on **dispatch** | CD stays in GitHub Actions | Spec 12a, YAML 12b, mutate Azure 12c |
+
+**What does *not* change (any 12x):**
+
+- Center `.csproj` projects and handler logic (same empty-diff constraint as Step 11).
 - `DuckNet.Contracts` event shapes.
-- Outbox pattern inside each Center (still local DB transaction → publish).
-- Consumer inbox, offset store, upcasters, saga state machines.
+- Outbox / inbox / offset store / upcasters / saga state machines inside each Center.
+- Local demo: Aspire + SQLite + RabbitMQ remains the zero-cloud path forever.
+- CI/review: `ci.yml` and `claude-review.yml` never need Azure.
 
-**Implement:**
+**CD locks (12a — do not reopen in 12b/12c without a new decision record):**
 
-1. **`infra/bicep/main.bicep`** (or modular stack):
-   - Resource group per environment (`dev`, `prod`).
-   - Container Apps Environment + one Container App per Center.
-   - Event Hubs namespace + hub `ducknet-events`.
-   - Service Bus namespace + topic `ducknet-events` + subscriptions per consumer group.
-   - PostgreSQL Flexible Server + databases: `telemetry`, `alarm`, `dashboard`, `billing`.
-   - Key Vault + Managed Identities per Container App.
-   - Log Analytics + Application Insights.
-
-2. **`DuckNet.EventBus` implementations:**
-   - `EventHubsLogWriter` — TelemetryCenter appends to Event Hubs (system of record for replay).
-   - `ServiceBusEventBus` — transport to Centers (at-least-once, subscription per group).
-   - Keep `RabbitMqEventBus` and `InMemoryEventBus` for local dev — **environment selects implementation**.
-
-3. **Aspire → Azure mapping:**
-   - Replace AppHost orchestration with Bicep + Container Apps revision deploys.
-   - Optional: keep AppHost for local dev only; `azd` profile for cloud (`azd init` + `azd up`).
-
-4. **Hot partition story (Step 8) on Azure:**
-   - Event Hubs partition count = shard count (e.g. 4).
-   - `duckId` as partition key → same lesson as Telia Event Hubs/Cosmos.
-   - Container Apps KEDA scaler on Service Bus subscription depth.
-
-5. **Environments:**
-   - `dev` — min replicas 0–1, smaller SKUs, synthetic ducks only.
-   - `prod` — min replicas 1, alerts on DLQ depth and consumer lag.
-
-**Acceptance criteria:**
-
-- [ ] Full demo runs in Azure: squeak → alarm → dashboard → billing with trace in App Insights.
-- [ ] Deploy/update **one** Center without redeploying others (see CI/CD below).
-- [ ] Stop AlarmCenter Container App → events queue → restart → catches up with no data loss.
-- [ ] `git diff` on Center handler projects empty when switching local RabbitMQ ↔ Azure Service Bus.
-
-**Estimated effort:** ~3–5 evenings (IaC + first deploy + wiring). Incremental if Bicep scaffold starts at Step 4.
-
-**Phase D tag:** `step-12-azure`
+1. **CD lives in GitHub Actions**, not Azure DevOps. Rationale: [decision record](./docs/decisions/cd-github-actions-vs-azure-devops.md).
+2. **Two identity planes:** pipeline = Entra app + OIDC federated to GitHub Environments `azure-dev` / `azure-prod`; runtime = Container App managed identity. The pipeline identity is not a data-plane client.
+3. **No Azure client secret** in GitHub. Identifiers only: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`.
+4. **Images auto-push to GHCR** (already live). **Azure resource apply and Container App revision updates are `workflow_dispatch` only** so a lab env is not billed on every merge. Prod always has a required GitHub Environment reviewer. Optional later: `AZURE_AUTO_DEPLOY_DEV` for enterprise-shaped auto-dev.
+5. **GHCR** = no-Azure artifact store. **ACR** = what Container Apps pull (managed identity, no GHCR PAT on the app).
+6. **Bootstrap is human, once per environment** (Entra app, federated creds, RG RBAC). Infra CD and app CD are separate jobs.
 
 ---
 
+### Step 12a — Cloud CD contract
+
+**Goal:** Pin how GitHub-hosted code is allowed to deploy onto Azure *before* writing Bicep or spending money. This step is documentation and decisions. Local demo must stay Step 11.
+
+**Implement:**
+
+1. Split this Phase D into 12a / 12b / 12c (this document).
+2. Decision record: GitHub Actions vs Azure DevOps.
+3. [CD contract](./docs/cd-contract.md): trust chain, OIDC subjects, Environments, pipeline map, registry split, bootstrap vs app CD, runtime MI vs pipeline app, human prerequisites for 12c.
+4. As-built [docs/architecture/step-12a.md](./docs/architecture/step-12a.md) — identity/CD diagrams, not fake Container Apps.
+
+**Acceptance criteria:**
+
+- [x] Phase D names 12a/12b/12c with separate branches, tags, and “Azure spend / human account” columns.
+- [x] Written lock: CD = GitHub Actions; ADO is the Telia-shaped alternative, not this repo.
+- [x] Written lock: OIDC federated credentials bound to `environment:azure-dev` and `environment:azure-prod`; no `AZURE_CLIENT_SECRET`.
+- [x] Written lock: pipeline identity ≠ runtime MI; GitHub never stores Center connection strings.
+- [x] Written lock: path-filtered `main` pushes GHCR only; Azure mutate is dispatch.
+- [x] `dotnet test` still the merge gate; this step has no code — **untested** beyond “docs-only, no `.cs` change.”
+- [x] Merge to `main` and tag `step-12a`.
+
+**What this step must not do:** create Azure resources, write `infra/bicep/`, add `ServiceBusEventBus`, create GitHub Environments, or extend `deploy-center.yml` with `azure/login`.
+
+**Tests:** none (no behavior change). Do not claim “no behavior change” as a test result — there is no test; say untested/docs-only.
+
+**Demo script:** none. Show the contract mermaid in [step-12a.md](./docs/architecture/step-12a.md).
+
+**Estimated effort:** ~1 evening (thinking + docs).
+
+**Git:** branch `step-12a` → merge to `main` → tag `step-12a`
+
+---
+
+### Step 12b — Azure-ready (no live deploy)
+
+**Goal:** Everything that can be written and tested **without** an Azure subscription: Bicep that compiles, EventBus/Postgres adapters behind env flags, workflows that skip Azure when OIDC vars are absent. After this step, `main` is still runnable locally exactly as Step 11.
+
+**Implement:**
+
+1. **`infra/bicep/`** (modules + `dev`/`prod` parameter files):
+   - Container Apps Environment + one Container App per Center (placeholders/images ok).
+   - Event Hubs namespace + hub `ducknet-events` (partition count e.g. 4).
+   - Service Bus namespace + topic `ducknet-events` + subscriptions per consumer group (`alarm-center`, `dashboard-projector`, `billing-center`).
+   - PostgreSQL Flexible Server + databases `telemetry`, `alarm`, `dashboard`, `billing`.
+   - Key Vault + user-assigned managed identities (pipeline role assignments expressed in Bicep).
+   - Log Analytics + Application Insights.
+   - ACR.
+2. **`az bicep build`** (and `what-if` only if OIDC vars exist) on PRs that touch `infra/bicep/` — new `infra.yml`. Missing vars → compile-only, green.
+3. **`DuckNet.EventBus`:**
+   - `EventHubsLogWriter` — Telemetry appends to Event Hubs (system of record for replay).
+   - `ServiceBusEventBus : IEventBus` — at-least-once, subscription per consumer group.
+   - Keep `RabbitMqEventBus` + `InMemoryEventBus`; **environment selects implementation**.
+   - Same IEventBus contract suite as Step 11; skip or Testcontainers/emulator when Azure creds are absent.
+4. **Postgres provider** for Center persistence (Npgsql). Local Aspire **stays SQLite**. Testcontainers for provider tests.
+5. **Extend `deploy-center.yml`:** Azure job **present** but `if:` skipped when Environment vars are missing. Do not fail `ci.yml`. Do not `az containerapp update` against a real app yet (no app).
+6. Optional: `azd` profile as on-ramp to emit Bicep; checked-in Bicep remains the source of truth ([IaC decision](./docs/decisions/iac-bicep-vs-pulumi.md)).
+7. As-built [docs/architecture/step-12b.md](./docs/architecture/step-12b.md) from **code on that branch** (adapters + IaC graph). Do not draw a live Azure env as if 12c happened.
+
+**Hot partition (spec only until 12c has a hub):** Event Hubs partition count = shard count; `duckId` as partition key; KEDA on Service Bus depth — wire scalers in Bicep here, prove them in 12c.
+
+**Acceptance criteria:**
+
+- [ ] `az bicep build` (or equivalent in CI) green on `infra/bicep/`.
+- [ ] `dotnet test` green **without** Azure credentials (Azure-backed tests skip).
+- [ ] `git diff` on Center **handler** projects empty for the Service Bus adapter (factory/env branch only — same rule as Step 11).
+- [ ] `deploy-center.yml` / `infra.yml` do not call Azure unless OIDC vars are set; a contributor without an Azure account gets a green PR.
+- [ ] Local `dotnet run --project src/DuckNet.AppHost` still the Step 11 demo (SQLite + RabbitMQ).
+- [ ] As-built `docs/architecture/step-12b.md` + link from [docs/architecture/README.md](./docs/architecture/README.md).
+
+**Estimated effort:** ~3–4 evenings (Bicep + adapters + skip-safe YAML).
+
+**Git:** branch `step-12b` → merge to `main` → tag `step-12b`
+
+---
+
+### Step 12c — First Azure environment (live deploy)
+
+**Goal:** One `dev` environment in Azure that runs the same demo as Aspire, with traces in App Insights, and the ability to update **one** Center without touching the others. This is the first step that needs a subscription and that spends money.
+
+**Blocked on:** 12b merged; human bootstrap from the [CD contract](./docs/cd-contract.md) (Entra app, two federated credentials, RG RBAC, GitHub Environment variables).
+
+**Implement:**
+
+1. Human bootstrap (once): Entra app `ducknet-gha`, federated creds for `azure-dev` / `azure-prod`, RGs, GitHub Environments + vars. No client secret.
+2. `infra.yml` `workflow_dispatch` → `az deployment group create` to `ducknet-dev` (Sweden Central, fallback West Europe).
+3. `deploy-center.yml` Azure job on `workflow_dispatch`: OIDC → ACR push → `az containerapp update` → `/health` on the Azure FQDN.
+4. Wire Container App settings: Key Vault references, OTel exporter, `ServiceBusEventBus` + Event Hubs writer selected by env.
+5. Smoke: squeak → alarm → dashboard → billing; one trace in App Insights.
+6. Independent deploy: change AlarmCenter only → dispatch `center=alarm` → only that revision moves.
+7. Catch-up: stop AlarmCenter Container App → events queue on the subscription → start → drains, no data loss.
+8. Document deallocate/stop (Container Apps + PostgreSQL) so the lab is not $65–120/month idle.
+9. As-built [docs/architecture/step-12c.md](./docs/architecture/step-12c.md) from the **deployed** topology (note SKU/region divergences from the HTML target).
+
+**Environments:**
+
+- `dev` — min replicas 1 for consumers (scale-to-zero misses the poll/queue loop unless KEDA is proven); smaller SKUs; synthetic ducks.
+- `prod` — optional in this lab; if created, min replicas 1, required GitHub reviewer, alerts on DLQ depth and consumer lag. Not a 12c gate.
+
+**Acceptance criteria:**
+
+- [ ] Full demo runs in Azure: squeak → alarm → dashboard → billing with a trace in App Insights.
+- [ ] Dispatch deploys **one** Center without redeploying others.
+- [ ] Stop AlarmCenter Container App → events queue → restart → catch-up, no data loss.
+- [ ] `git diff` on Center handlers still empty for RabbitMQ ↔ Service Bus (local still RabbitMQ).
+- [ ] No `AZURE_CLIENT_SECRET` in GitHub; `azure/login` uses OIDC.
+- [ ] `ci.yml` still green for contributors with no Azure account.
+- [ ] As-built `docs/architecture/step-12c.md`.
+
+**Estimated effort:** ~1–2 evenings after bootstrap (first apply is the long pole: SKUs, firewall, MI role assignments).
+
+**Git:** branch `step-12c` → merge to `main` → tag `step-12c`
+
+**Phase D tag (when 12c lands):** `step-12-azure` (annotated pointer at 12c) plus the three sub-tags.
+
+---
+
+
 ## CI/CD — deploy any Center, any time
 
-**Principle:** Each Center is an independently deployable unit. CI validates the whole solution; CD deploys only what changed.
+**Principle:** Each Center is an independently deployable unit. CI validates the whole solution; CD publishes only what changed. **CD home is GitHub Actions** ([decision](./docs/decisions/cd-github-actions-vs-azure-devops.md)). Azure DevOps is not introduced.
+
+Normative identity/OIDC/pipeline detail: [docs/cd-contract.md](./docs/cd-contract.md). This section is the short map.
 
 ### Pipeline layout
 
 ```
 .github/workflows/
-├── ci.yml                 # every push + PR
+├── ci.yml                 # every push + PR — never Azure
 ├── claude-review.yml      # PRs only — triage + architecture/security + aggregate
-└── deploy-center.yml      # manual dispatch + path-filtered auto deploy
+├── deploy-center.yml      # path-filtered GHCR push (live); Azure revision update from 12c on dispatch
+└── infra.yml              # 12b: bicep build; 12c: dispatch apply to one RG
 ```
 
 ### `ci.yml` — add at Step 0 (before any Center exists)
@@ -721,33 +824,40 @@ Runs on every push/PR to `main`:
 # Steps: restore → build → test → kernel smoke → docker build Centers
 ```
 
-**Done when:** red PR if tests fail; green main always deployable.
+**Done when:** red PR if tests fail; green main always deployable. A contributor **without** an Azure account must still get a green `ci.yml`.
 
 ### `deploy-center.yml` — add at Step 4 (first multi-Center split)
 
 **Triggers:**
 
-1. **Manual `workflow_dispatch`** — inputs: `center` (telemetry | alarm | dashboard | billing | all), `environment` (dev | prod).
-2. **Path-filtered auto-deploy to `dev`** on merge to `main`:
-   - `src/DuckNet.TelemetryCenter/**` → deploy telemetry only
-   - `src/DuckNet.AlarmCenter/**` → deploy alarm only
+1. **Manual `workflow_dispatch`** — inputs: `center` (telemetry | alarm | dashboard | billing | all), `environment` (dev | prod → GitHub Environments `azure-dev` / `azure-prod` from 12c).
+2. **Path-filtered GHCR publish** on merge to `main` (live today — this is **not** an Azure deploy):
+   - `src/DuckNet.TelemetryCenter/**` → telemetry image only
+   - `src/DuckNet.AlarmCenter/**` → alarm image only
    - (same pattern for each Center)
-   - `src/DuckNet.Contracts/**` or `src/DuckNet.EventBus/**` → deploy **all** Centers (shared contract change)
+   - `src/DuckNet.Contracts/**`, `src/DuckNet.EventBus/**`, or `src/DuckNet.ServiceDefaults/**` → **all** Center images
 
-**Deploy steps (local Docker path, Steps 4–11) — live:**
+**Deploy steps (GHCR path, Steps 4–11, still live through 12c):**
 
 1. Build Center container image (`infra/docker/DuckNet.{Center}/Dockerfile`).
-2. Tag: `{registry}/ducknet-{center}:{git-sha}`.
-3. Push to GitHub Container Registry (ghcr.io).
+2. Tag: `ghcr.io/<owner>/ducknet-{center}:{git-sha}`.
+3. Push to GitHub Container Registry.
 4. Smoke test: HTTP `/health` on the local image.
-5. Does **not** update a running Aspire/Compose host or Azure (Step 12).
+5. Does **not** update Aspire, Compose, or Azure.
 
-**Deploy steps (Azure path, Step 12+):**
+**Deploy steps (Azure path — YAML in 12b, first real run in 12c):**
 
-1. Same build + push to Azure Container Registry.
-2. `az containerapp update --name {center} --image ...` (or Bicep what-if + deploy scoped module).
-3. Wait for revision healthy; run smoke test against Azure URL.
-4. Rollback = redeploy previous image tag (keep last N tags).
+1. Same build; push that tag to **ACR** (pipeline OIDC → `AcrPush`).
+2. `azure/login@v2` with `client-id` / `tenant-id` / `subscription-id` from GitHub Environment **vars** (OIDC, `id-token: write`). No `AZURE_CLIENT_SECRET`.
+3. `az containerapp update --name {center} --image ...` (or scoped Bicep module).
+4. Wait for revision healthy; smoke `/health` against the Azure FQDN.
+5. Rollback = redeploy previous image tag (keep last N tags).
+6. **Lab lock:** this Azure job runs on `workflow_dispatch` only. Path-filtered `main` stays GHCR-only unless someone later sets `AZURE_AUTO_DEPLOY_DEV` (dev only; prod stays manual).
+
+### `infra.yml` — add at 12b, apply at 12c
+
+- **PR / push** touching `infra/bicep/**`: `az bicep build`. `what-if` only if OIDC vars exist; otherwise compile-only.
+- **`workflow_dispatch`:** `az deployment group create` to the Environment’s resource group. Never auto-apply Bicep on merge.
 
 ### Per-Center Dockerfile pattern
 
@@ -776,17 +886,20 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 
 ### Secrets & environments
 
-- GitHub Environments: `dev`, `prod` (prod requires reviewer approval).
-- Secrets: `CLAUDE_CODE_OAUTH_TOKEN` (review job), Azure credentials / federated OIDC (`AZURE_CLIENT_ID`, etc.) from Step 12.
-- Never store connection strings in repo — inject at deploy from Key Vault or GitHub Environment secrets.
+- GitHub Environments (from 12c): `azure-dev`, `azure-prod` (prod requires reviewer). Not the old names `dev` / `prod`.
+- Repo secret: `CLAUDE_CODE_OAUTH_TOKEN` (review job) — unrelated to Azure.
+- Azure identifiers as **Environment variables** (not secrets): `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`.
+- Runtime connection strings live in **Key Vault**, read by Container App managed identity. Never GitHub secrets, never the pipeline Entra app as a data-plane client.
 
 **Acceptance criteria:**
 
-- [ ] Merge to main that only touches AlarmCenter deploys AlarmCenter to dev — nothing else.
-- [ ] Manual dispatch can deploy `all` or any single Center to prod.
-- [ ] Contract change triggers full redeploy with visible pipeline fan-out.
+- [x] Path-filtered merge that only touches AlarmCenter publishes **only** the alarm GHCR image (live).
+- [x] Manual dispatch can build `all` or any single Center (live, GHCR).
+- [x] Contract/bus change fans out to all four images (live).
+- [ ] Dispatch to `azure-dev` updates **one** Container App (12c).
+- [ ] Dispatch to `azure-prod` requires GitHub Environment approval (12c).
+- [ ] No Azure password in GitHub; OIDC only (12c).
 
----
 
 ## CCA-F integration — development, CI/CD & system
 
@@ -831,7 +944,7 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 |----------|------------------------------|
 | `ci.yml` | Reliable automation; deterministic builds |
 | `claude-review.yml` | Headless Claude Code in CI; `-p` flag; triage writes `review-state.json`, then isolated architecture + security specialists; `jq` aggregates one advisory comment |
-| `deploy-center.yml` | Scoped automation; human approval gate on prod |
+| `deploy-center.yml` | Scoped automation; GHCR now; OIDC + Environment gate on Azure from 12c |
 | PostToolUse hook | Auto `dotnet format` after agent edits locally |
 
 Later / parked ReviewFlow and CI work lives in [docs/ci-policy.md](docs/ci-policy.md) — do not treat it as Step 0 scope.
@@ -921,8 +1034,10 @@ See [docs/ci-policy.md](docs/ci-policy.md) for the ReviewFlow later list (nightl
 | **0** | `ci.yml` + `claude-review.yml` + root `CLAUDE.md` |
 | **4** | Dockerfiles + `deploy-center.yml` (local/ghcr) |
 | **6** | Contract-change → deploy-all fan-out |
-| **9** | MCP ops server planned (not built — still Step 12-adjacent / CCA-F D2) |
-| **12** | Azure OIDC + Container Apps deploy + App Insights |
+| **9** | MCP ops server planned (not built — still CCA-F D2, not a 12a gate) |
+| **12a** | CD contract: GitHub Actions + OIDC subjects + two identity planes (docs) |
+| **12b** | Bicep compile + EventBus/Postgres adapters + skip-safe Azure jobs |
+| **12c** | Human bootstrap + first `dev` RG + Container App revision dispatch + App Insights |
 
 ---
 
@@ -962,7 +1077,7 @@ See [docs/ci-policy.md](docs/ci-policy.md) for the ReviewFlow later list (nightl
 
 Never implement the next step on the same branch. Never merge a step with failing tests.
 
-- One git tag per completed step: `step-0` … `step-12`.
+- One git tag per completed step: `step-0` … `step-11`, then `step-12a` / `step-12b` / `step-12c`.
 - Commit message format: `feat(step-N): short description`.
 - Keep `ImplementationPlan.md` checklist updated as steps complete.
 
@@ -991,13 +1106,15 @@ flowchart TD
   S8 --> S9[Step 9: Tracing]
   S9 --> S10[Step 10: Billing saga]
   S10 --> S11[Step 11: RabbitMQ swap]
-  S11 --> S12[Step 12: Azure hosting]
+  S11 --> S12a[Step 12a: CD contract]
+  S12a --> S12b[Step 12b: Azure-ready IaC + adapters]
+  S12b --> S12c[Step 12c: first Azure environment]
   S0 -.-> CI[CI + Claude review<br/>parallel from Step 0]
-  S4 -.-> CD[Per-Center deploy<br/>from Step 4]
-  CD --> S12
+  S4 -.-> CD[Per-Center GHCR<br/>from Step 4]
+  CD --> S12c
 ```
 
-Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5 start. Steps 7–9 are mostly independent modules layered onto existing consumers. **CI + Claude review** runs in parallel from Step 0; **per-Center CD** from Step 4; **Azure** after Step 11.
+Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5 start. Steps 7–9 are mostly independent modules layered onto existing consumers. **CI + Claude review** runs in parallel from Step 0; **per-Center GHCR** from Step 4; **Azure mutate** only from 12c (`workflow_dispatch`). 12a and 12b must stay green with **no Azure account**.
 
 ---
 
@@ -1016,7 +1133,9 @@ Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5
 | Debuggability | 9 | Single trace across Centers |
 | Sagas vs 2PC | 10 | Compensation + timeout |
 | Ports & adapters | 11 | Empty Center diff on broker swap |
-| Cloud migration | 12 | Same Centers, swap bus/log/DB to Azure |
+| Cloud CD contract | 12a | GitHub Actions + OIDC; pipeline identity ≠ runtime MI |
+| Cloud adapters | 12b | Same Centers; Service Bus / Event Hubs / Postgres behind env |
+| Cloud hosting | 12c | Live ACA + independent Center dispatch + App Insights |
 | AI-native ops | CI + MCP | CCA-F: headless review + MCP debug tools |
 
 **Phase A soundbite:** *"I've forced duplicates and out-of-order delivery on purpose and kept counts correct."*
@@ -1024,6 +1143,8 @@ Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5
 **Phase B soundbite:** *"Two databases, zero sync calls — I can delete a read model and rebuild from the log."*
 
 **Phase C soundbite:** *"I've reproduced hot-partition starvation and traced one squeak through four services."*
+
+**Phase D soundbite:** *"CD stays in GitHub Actions with OIDC — no Azure password in GitHub. The pipeline identity deploys; each Center's managed identity is the data plane. I can ship one Container App without touching the others."*
 
 ---
 
@@ -1037,22 +1158,26 @@ Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5
 | Leisure | 5–6 | CQRS + schema evolution |
 | Leisure | 7–9 | Ops-shaped reliability |
 | Leisure | 10–11 | Saga + broker swap punchline |
-| Leisure | 12 | Azure + full CD pipeline |
+| Leisure | 12a | CD contract (GitHub vs ADO, OIDC) — no Azure account |
+| Leisure | 12b | Bicep + adapters; local demo unchanged |
+| Leisure | 12c | First Azure `dev` + dispatch CD (needs subscription) |
 | **Step 0 parallel** | CI + Claude review | ~1–2 hr; runs on every PR from day one |
 
 ---
 
 ## Definition of done (whole project)
 
-- [x] Steps 0–11 on `main` and runnable (local Aspire). Step 12 Azure not started.
-- [ ] All steps 0–12 **tagged** (`git tag` exists only for `step-0` and `step-1` today).
+- [x] Steps 0–11 on `main` and runnable (local Aspire).
+- [x] Step 12a on `main` (CD contract + decision records). 12b/12c not started.
+- [ ] All steps 0–11 and 12a–12c **tagged** (`git tag` exists only for `step-0` and `step-1` today).
 - [x] Architecture tests enforce Center isolation (`CenterIsolationTests` per Center).
 - [x] README with demo commands for each completed step.
-- [x] `DuckNetArchitectureSteps.html` linked from as-built `docs/architecture/step-N.md` (update again if Step 12 diverges).
+- [x] `DuckNetArchitectureSteps.html` linked from as-built `docs/architecture/step-N.md` (update again if 12c diverges).
 - [x] Single-command local demo: `dotnet run --project src/DuckNet.AppHost` — squeak → alarm → dashboard → billing; traces in Aspire.
-- [ ] Same demo in Azure with traces in App Insights (Step 12).
+- [ ] Same demo in Azure with traces in App Insights (12c).
 - [x] `ci.yml` on main; `claude-review.yml` posting one aggregated ReviewFlow comment on PRs.
-- [ ] `deploy-center.yml` can deploy any single Center or all to Azure dev/prod (today: GHCR image push + local `/health` smoke only).
+- [x] `deploy-center.yml` publishes any single Center or all to GHCR (path filter + dispatch).
+- [ ] `deploy-center.yml` can update any single Center or all on Azure `azure-dev` / `azure-prod` via OIDC dispatch (12c).
 - [ ] MCP ops tools documented for log replay, DLQ inspect, dashboard rebuild (CCA-F D2).
 
 ---
@@ -1065,16 +1190,21 @@ Resolved before Step 4 implementation:
 |----------|--------|-----------|
 | **Database (Steps 3–7)** | **SQLite** per Center | Zero ops locally; file-per-DB keeps Rule 2 obvious |
 | **Database (Steps 8+ local)** | **SQLite still** (Postgres deferred) | Hot-partition demo is worker/channel starvation; `KernelDb` serializes writes. See [step-8.md](./docs/architecture/step-8.md) |
-| **Database (Step 12 Azure)** | **Azure Database for PostgreSQL** — one server, separate DB per Center | Mirrors local model; no shared schema |
+| **Database (12c Azure)** | **Azure Database for PostgreSQL** — one server, separate DB per Center | Mirrors local model; no shared schema. Provider code in 12b |
 | **Log ownership** | **TelemetryCenter owns the write path** | Other Centers subscribe via `IEventBus` only — never read Telemetry's DB |
 | **Log storage (local)** | Append-only table in Telemetry DB (Step 3–11) | Simple replay; same code path as outbox dispatcher |
-| **Log storage (Azure)** | **Azure Event Hubs** | Telia-shaped partition key lesson; replay from beginning |
+| **Log storage (Azure)** | **Azure Event Hubs** | Telia-shaped partition key lesson; replay from beginning. Writer in 12b, live 12c |
 | **Broker (Step 11 local)** | **RabbitMQ** via Aspire container | Simplest local at-least-once broker; proves port/adapter |
-| **Broker (Step 12 Azure)** | **Azure Service Bus** topics + subscriptions | Production-shaped; consumer group = subscription name |
-| **IaC (Step 12)** | **Bicep** + optional `azd` | Native Azure; `azd`/Aspire emit Bicep; no state backend — see [decision record](docs/decisions/iac-bicep-vs-pulumi.md) |
+| **Broker (Azure)** | **Azure Service Bus** topics + subscriptions | Production-shaped; consumer group = subscription name. Adapter 12b, live 12c |
+| **IaC** | **Bicep** + optional `azd` | Native Azure; `azd`/Aspire emit Bicep; no state backend — see [decision record](docs/decisions/iac-bicep-vs-pulumi.md). Write 12b, apply 12c |
 | **Container hosting** | **Azure Container Apps** | One app per Center — matches deploy-any-Center CI/CD |
+| **CD home** | **GitHub Actions** (not Azure DevOps) | Code already on GitHub; OIDC is first-class; CCA-F D3 is Actions. See [decision record](docs/decisions/cd-github-actions-vs-azure-devops.md) |
+| **Pipeline identity** | **Entra app + OIDC** federated to GitHub Environments `azure-dev` / `azure-prod` | No `AZURE_CLIENT_SECRET`. Spec 12a, created 12c |
+| **Runtime identity** | **Container App managed identity** | Data plane (KV, SB, Event Hubs). Pipeline app is not a data-plane client |
+| **Azure mutate** | **`workflow_dispatch` only** (lab) | Path-filtered `main` publishes GHCR; optional later `AZURE_AUTO_DEPLOY_DEV` |
 | **CI from** | **Step 0** | Cheap insurance; CCA-F D3 practice |
 | **Claude PR review from** | **Step 0** | ~1–2 hr setup; high demo + exam value |
-| **CD from** | **Step 4** | Needs real Center boundaries to mean anything |
+| **CD (GHCR) from** | **Step 4** | Needs real Center boundaries to mean anything |
+| **CD (Azure) from** | **12c** | Needs 12a contract + 12b IaC + a subscription |
 
 Document any deviation in commit message when implementing the affected step.

@@ -2,6 +2,47 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-31 — Step 12a: split Phase D + CD contract
+
+### What changed
+Step 12 was one “host on Azure” blob. Split into **12a** (this step: CD/identity contract, $0), **12b** (Bicep + EventBus/Postgres adapters, still $0), **12c** (first live `dev`, needs a subscription).
+
+Locked: CD stays in **GitHub Actions** (not Azure DevOps). Two identity planes (pipeline Entra app + OIDC vs Container App MI). No `AZURE_CLIENT_SECRET`. Path-filtered `main` keeps publishing GHCR; Azure mutate is `workflow_dispatch` only.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  S11[Step 11 local] --> S12a[12a CD contract]
+  S12a --> S12b[12b IaC + adapters]
+  S12b --> S12c[12c live Azure]
+  GHA[GitHub Actions] -->|"OIDC no secret"| Entra[Entra app]
+  Entra -->|"deploy-time"| ACA[Container Apps]
+  MI[Runtime MI] -->|"data plane"| ACA
+```
+
+```mermaid
+sequenceDiagram
+  participant GHA as GitHub Actions
+  participant Entra as Entra OIDC
+  participant ACR as ACR
+  participant ACA as Container App
+  Note over GHA: 12a specifies; 12c runs
+  GHA->>Entra: id-token environment:azure-dev
+  Entra-->>GHA: access token
+  GHA->>ACR: push image
+  GHA->>ACA: az containerapp update
+```
+
+### How to test
+- Docs-only / **untested** (no `.cs` change). Skim [ImplementationPlan.md](../ImplementationPlan.md) Phase D, [docs/cd-contract.md](./cd-contract.md), [docs/architecture/step-12a.md](./architecture/step-12a.md).
+- `dotnet test` still the merge gate for any later code; this step does not claim “no behavior change” as a test result.
+
+### Follow-ups
+**12b next** (needs OK to start): `infra/bicep/` + `ServiceBusEventBus` + skip-safe `infra.yml` / Azure job.
+**Not this pass:** Entra app, GitHub Environments, live RG.
+
+**CCA-F:** none new — D3 story is now explicit (OIDC + Environments). Propose a `ducknet-azure-oidc` skill when 12c bootstrap is repetitive enough to script.
+
 ## 2026-08-31 — Docs aligned to Step 11 as-built
 
 ### What changed

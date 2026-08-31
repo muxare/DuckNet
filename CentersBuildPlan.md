@@ -11,7 +11,7 @@
 4. Delivery is at-least-once and unordered — always. Even in-memory, simulate it.
 5. Every step must stay runnable end-to-end. Never break the demo.
 
-**Tech:** .NET 10, one solution, .NET Aspire AppHost from step 4 onward. Start with in-memory transport behind an `IEventBus` abstraction; swap the transport late without touching Center code — that swap is itself proof the architecture is right. Steps 0–11 are on `main`; Azure is Step 12.
+**Tech:** .NET 10, one solution, .NET Aspire AppHost from step 4 onward. Start with in-memory transport behind an `IEventBus` abstraction; swap the transport late without touching Center code — that swap is itself proof the architecture is right. Steps 0–11 are on `main`; Azure is Phase D (**12a** contract → **12b** adapters/IaC → **12c** live).
 
 ---
 

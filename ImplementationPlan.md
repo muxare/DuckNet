@@ -10,14 +10,14 @@
 
 DuckNet is a stepwise .NET 10 learning/production-shaped demo: smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing databases. Each step adds one distributed-systems concept while keeping the demo runnable end-to-end.
 
-**As-built (2026-08-31):** Steps **0–11 are on `main`**. Local demo is Aspire + four Centers + SQLite per Center + HTTP `event_log` (system of record) + RabbitMQ behind `IEventBus`. Phase D is split: **12a** CD/identity contract (docs), **12b** Azure-ready IaC + adapters (no live deploy), **12c** first Azure environment. Current layout: [CLAUDE.md](./CLAUDE.md) / [README.md](./README.md). As-built diagrams: [docs/architecture/](./docs/architecture/).
+**As-built (2026-08-31):** Steps **0–12b are on this branch** (`step-12b`). Local demo is still Aspire + four Centers + SQLite per Center + HTTP `event_log` + RabbitMQ behind `IEventBus`. **12a** CD/identity contract, **12b** Bicep + ServiceBus/Event Hubs/Postgres adapters (no live Azure), **12c** first Azure environment (needs a subscription). Current layout: [CLAUDE.md](./CLAUDE.md) / [README.md](./README.md). As-built diagrams: [docs/architecture/](./docs/architecture/).
 
 Deviations from locks in this plan:
 
 - **PostgreSQL from Step 8** was deferred. SQLite remains through Step 11 (starvation is at the worker/channel layer; see [step-8.md](./docs/architecture/step-8.md)). Azure still targets PostgreSQL.
 - **Git tags** exist only for `step-0` and `step-1`; later steps were merged without tags.
 - **MCP ops** (`ducknet-mcp-ops` / `DuckNet.Mcp`) is still planned, not built.
-- **`deploy-center.yml`** builds and pushes GHCR images; it does not deploy to Azure (12c).
+- **`deploy-center.yml`** builds and pushes GHCR images. The Azure job is present but skipped without OIDC vars; it does not mutate Azure until 12c has an ACR + Container Apps.
 - **Phase D** was one “Step 12 Azure” blob; it is now **12a / 12b / 12c** so identity/CD can lock before any billed resources exist.
 
 | Phase | Steps | Outcome |
@@ -89,7 +89,7 @@ DuckNet/
 ├── DuckNet.AppHost/                  # Aspire orchestration (Step 4+)
 ├── src/
 │   ├── DuckNet.Contracts/            # Shared event DTOs + versions
-│   ├── DuckNet.EventBus/             # IEventBus + in-memory + RabbitMQ
+│   ├── DuckNet.EventBus/             # IEventBus + in-memory + RabbitMQ + Service Bus + Event Hubs writer
 │   ├── DuckNet.TelemetryCenter/
 │   ├── DuckNet.AlarmCenter/
 │   ├── DuckNet.DashboardCenter/      # Step 5
@@ -647,7 +647,7 @@ One story (same Centers, swap infra behind `IEventBus`) but **three mergeable un
 
 **Decisions:** [GitHub Actions vs Azure DevOps](./docs/decisions/cd-github-actions-vs-azure-devops.md) · [Bicep vs Pulumi](./docs/decisions/iac-bicep-vs-pulumi.md).
 
-As-built for 12a: [docs/architecture/step-12a.md](./docs/architecture/step-12a.md). 12b/12c diagrams after those steps pass.
+As-built for 12a: [docs/architecture/step-12a.md](./docs/architecture/step-12a.md). As-built for 12b: [docs/architecture/step-12b.md](./docs/architecture/step-12b.md). 12c diagrams after that step passes.
 
 ### Architecture decisions (locked for the Azure path)
 
@@ -743,12 +743,12 @@ As-built for 12a: [docs/architecture/step-12a.md](./docs/architecture/step-12a.m
 
 **Acceptance criteria:**
 
-- [ ] `az bicep build` (or equivalent in CI) green on `infra/bicep/`.
-- [ ] `dotnet test` green **without** Azure credentials (Azure-backed tests skip).
-- [ ] `git diff` on Center **handler** projects empty for the Service Bus adapter (factory/env branch only — same rule as Step 11).
-- [ ] `deploy-center.yml` / `infra.yml` do not call Azure unless OIDC vars are set; a contributor without an Azure account gets a green PR.
-- [ ] Local `dotnet run --project src/DuckNet.AppHost` still the Step 11 demo (SQLite + RabbitMQ).
-- [ ] As-built `docs/architecture/step-12b.md` + link from [docs/architecture/README.md](./docs/architecture/README.md).
+- [x] `az bicep build` (or equivalent in CI) green on `infra/bicep/`.
+- [x] `dotnet test` green **without** Azure credentials (Azure-backed tests skip).
+- [x] `git diff` on Center **handler** projects empty for the Service Bus adapter (factory/env branch only — same rule as Step 11).
+- [x] `deploy-center.yml` / `infra.yml` do not call Azure unless OIDC vars are set; a contributor without an Azure account gets a green PR.
+- [x] Local `dotnet run --project src/DuckNet.AppHost` still the Step 11 demo (SQLite + RabbitMQ).
+- [x] As-built `docs/architecture/step-12b.md` + link from [docs/architecture/README.md](./docs/architecture/README.md).
 
 **Estimated effort:** ~3–4 evenings (Bicep + adapters + skip-safe YAML).
 
@@ -1168,7 +1168,8 @@ Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5
 ## Definition of done (whole project)
 
 - [x] Steps 0–11 on `main` and runnable (local Aspire).
-- [x] Step 12a on `main` (CD contract + decision records). 12b/12c not started.
+- [x] Step 12a on `main` (CD contract + decision records).
+- [x] Step 12b Azure-ready (Bicep compile + adapters; no live deploy). 12c not started.
 - [ ] All steps 0–11 and 12a–12c **tagged** (`git tag` exists only for `step-0` and `step-1` today).
 - [x] Architecture tests enforce Center isolation (`CenterIsolationTests` per Center).
 - [x] README with demo commands for each completed step.

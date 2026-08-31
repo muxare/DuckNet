@@ -1,6 +1,6 @@
 # IaC for Step 12b: Bicep over Pulumi
 
-**Status:** accepted (re-evaluated 2026-08-30, while on Step 8). Nothing is implemented yet — `infra/bicep/` does not exist; `infra/` holds only Dockerfiles. This records *why* the [locked decision](../../ImplementationPlan.md#architecture-decisions-locked-in) is Bicep, so the one-line table row has an inspectable rationale. Bicep is **written in 12b** and **applied in 12c**. CD home is GitHub Actions ([sister decision](./cd-github-actions-vs-azure-devops.md)).
+**Status:** accepted (re-evaluated 2026-08-30, while on Step 8). Implemented as compile-only Bicep in 12b (`infra/bicep/`); **applied in 12c**. CD home is GitHub Actions ([sister decision](./cd-github-actions-vs-azure-devops.md)).
 
 ## Context
 

@@ -2,7 +2,47 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-31 — Step 12b: Azure-ready IaC + adapters (no live deploy)
+
+### What changed
+Bicep under `infra/bicep/` (Container Apps, Event Hubs, Service Bus, Postgres per Center, Key Vault, UAMI, ACR, App Insights). `ServiceBusEventBus` + `EventHubsLogWriter` behind env; `EventBusFactory` still picks RabbitMQ locally. Postgres provider in Kernel with Testcontainers. `infra.yml` compiles Bicep; Azure jobs skip when OIDC vars are missing. Center handlers unchanged. Local demo still Step 11.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  Aspire[Aspire SQLite plus RabbitMQ] --> Factory[EventBusFactory]
+  Factory --> IM[InMemory]
+  Factory --> RMQ[RabbitMQ]
+  Factory --> SB[ServiceBusEventBus]
+  Bicep[infra/bicep] -.->|compile only| Azure[not applied]
+```
+
+```mermaid
+sequenceDiagram
+  participant GHA as GitHub Actions
+  participant Bicep as az bicep build
+  participant OIDC as Environment vars
+  GHA->>Bicep: PR touches infra/bicep
+  alt OIDC missing
+    GHA->>GHA: skip login / what-if / containerapp update
+  else dispatch plus OIDC
+    GHA->>OIDC: azure/login
+  end
+```
+
+### How to test
+- `az bicep build --file infra/bicep/main.bicep`
+- `dotnet test` (no Azure creds; Service Bus / Event Hubs tests skip; Postgres Testcontainers run)
+- `dotnet run --project src/DuckNet.AppHost` — same Step 11 demo
+
+### Follow-ups
+**12c next:** human bootstrap (Entra app, federated creds, RG RBAC, GitHub Environments), first `dev` apply, wire Container App env to Service Bus + Event Hubs + Postgres.
+**Not this pass:** live Azure, `azd` profile, migrating Center stores off `SqliteConnection`.
+
+**CCA-F:** none new. A `ducknet-azure-oidc` skill still waits for 12c bootstrap to be repetitive enough to script.
+
 ## 2026-08-31 — Step 12a: split Phase D + CD contract
+
 
 ### What changed
 Step 12 was one “host on Azure” blob. Split into **12a** (this step: CD/identity contract, $0), **12b** (Bicep + EventBus/Postgres adapters, still $0), **12c** (first live `dev`, needs a subscription).

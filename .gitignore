@@ -11,3 +11,4 @@
 *.sqlite
 **/node_modules/
 src/DuckNet.DashboardCenter/wwwroot/
+infra/bicep/**/*.json

@@ -36,6 +36,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   matrix:
@@ -133,3 +134,69 @@ jobs:
           docker logs ducknet-smoke || true
           docker rm -f ducknet-smoke
           exit 1
+
+  azure:
+    needs: [matrix, deploy]
+    if: github.event_name == 'workflow_dispatch' && needs.matrix.outputs.centers != '[]' && needs.matrix.outputs.centers != ''
+    runs-on: ubuntu-latest
+    environment: azure-${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        center: ${{ fromJson(needs.matrix.outputs.centers) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check OIDC configuration
+        id: oidc
+        run: |
+          if [ -n "${{ vars.AZURE_CLIENT_ID }}" ] && [ -n "${{ vars.AZURE_TENANT_ID }}" ] && [ -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" ] && [ -n "${{ vars.AZURE_RESOURCE_GROUP }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "OIDC vars missing — skip Azure job (Step 12b)."
+          fi
+
+      - uses: azure/login@v2
+        if: steps.oidc.outputs.configured == 'true'
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR push and Container App revision
+        if: steps.oidc.outputs.configured == 'true'
+        env:
+          CENTER: ${{ matrix.center }}
+          TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          TAG12="${TAG:0:12}"
+          RG="${{ vars.AZURE_RESOURCE_GROUP }}"
+          ACR="$(az acr list --resource-group "$RG" --query "[0].name" -o tsv || true)"
+          if [ -z "$ACR" ]; then
+            echo "No ACR in $RG (12b / infra not applied). Skip containerapp update."
+            exit 0
+          fi
+          az acr login --name "$ACR"
+          SRC="ghcr.io/${{ github.repository_owner }}/ducknet-${CENTER}:${TAG12}"
+          DST="${ACR}.azurecr.io/ducknet-${CENTER}:${TAG12}"
+          docker pull "$SRC"
+          docker tag "$SRC" "$DST"
+          docker push "$DST"
+          APP="ducknet-${CENTER}"
+          if ! az containerapp show --name "$APP" --resource-group "$RG" >/dev/null 2>&1; then
+            echo "Container App $APP not found (12b). Skip revision update."
+            exit 0
+          fi
+          az containerapp update --name "$APP" --resource-group "$RG" --image "$DST"
+          FQDN="$(az containerapp show --name "$APP" --resource-group "$RG" --query properties.configuration.ingress.fqdn -o tsv)"
+          curl -fsS "https://${FQDN}/health"
+
+      - name: Skip Azure
+        if: steps.oidc.outputs.configured != 'true'
+        run: echo "No Entra OIDC vars. GHCR deploy already ran; Azure mutate waits for 12c bootstrap."
+

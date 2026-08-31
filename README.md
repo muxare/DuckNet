@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 12a complete** — CD contract (GitHub Actions + OIDC). Local demo is still Step 11 (Aspire + RabbitMQ). Next is [Step 12b (Azure-ready)](./ImplementationPlan.md#step-12b--azure-ready-no-live-deploy).
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 12b complete** — Azure-ready Bicep + adapters (no live deploy). Local demo is still Step 11 (Aspire + RabbitMQ). Next is [Step 12c (first Azure environment)](./ImplementationPlan.md#step-12c--first-azure-environment-live-deploy).
 
 ## Rules
 
@@ -218,13 +218,13 @@ infra/docker/                 # one image per Center
 | 10 | complete | Billing saga: reserve on alarm, release or timeout compensate |
 | 11 | complete | `IEventBus` port: RabbitMQ in Aspire, in-memory in tests |
 | 12a | complete | CD contract (GitHub Actions + OIDC) — [plan](./ImplementationPlan.md#step-12a--cloud-cd-contract) |
-| 12b | planned | Azure-ready: Bicep + adapters, no live deploy |
+| 12b | complete | Azure-ready: Bicep + adapters, no live deploy — [plan](./ImplementationPlan.md#step-12b--azure-ready-no-live-deploy) |
 | 12c | planned | First Azure environment (needs subscription) |
 
 ## Docs
 
 - [docs/architecture/](./docs/architecture/) — as-built architecture + execution diagrams per completed step
-- [docs/azure-deployment.md](./docs/azure-deployment.md) — learning notes: Azure options, 2018–2026 industry path, lab pricing (not implemented)
+- [docs/azure-deployment.md](./docs/azure-deployment.md) — learning notes: Azure options, 2018–2026 industry path, lab pricing (Bicep written in 12b, apply in 12c)
 - [docs/cd-contract.md](./docs/cd-contract.md) — GitHub → Azure identity planes, OIDC, pipeline map (Step 12a)
 - [docs/ci-policy.md](./docs/ci-policy.md) — required vs advisory checks; ReviewFlow later/parked backlog
 - [ImplementationPlan.md](./ImplementationPlan.md) — step-by-step build plan and acceptance criteria

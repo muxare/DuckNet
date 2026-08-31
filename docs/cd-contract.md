@@ -1,6 +1,6 @@
 # CD contract — GitHub → Azure (Step 12a)
 
-Spec for Steps 12b–12c. **Not as-built in workflows yet.** [`deploy-center.yml`](../.github/workflows/deploy-center.yml) today builds and pushes GHCR images and smokes `/health` locally; it does not log in to Azure.
+Spec for Steps 12b–12c. **12b as-built in workflows:** [`infra.yml`](../.github/workflows/infra.yml) compiles Bicep; [`deploy-center.yml`](../.github/workflows/deploy-center.yml) still pushes GHCR and **skips** the Azure job when OIDC vars are missing. Apply / `az containerapp update` wait for 12c bootstrap.
 
 Decisions this file assumes:
 

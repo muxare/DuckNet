@@ -1,0 +1,89 @@
+name: Infra
+
+on:
+  pull_request:
+    paths:
+      - "infra/bicep/**"
+      - ".github/workflows/infra.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/bicep/**"
+      - ".github/workflows/infra.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment (GitHub Environment azure-dev / azure-prod)
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - prod
+      action:
+        description: Azure action. Compile always runs. Apply is 12c.
+        required: true
+        type: choice
+        default: what-if
+        options:
+          - what-if
+          - apply
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bicep build
+        run: |
+          az bicep install
+          az bicep build --file infra/bicep/main.bicep
+
+  azure:
+    needs: compile
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: azure-${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check OIDC configuration
+        id: oidc
+        run: |
+          if [ -n "${{ vars.AZURE_CLIENT_ID }}" ] && [ -n "${{ vars.AZURE_TENANT_ID }}" ] && [ -n "${{ vars.AZURE_SUBSCRIPTION_ID }}" ] && [ -n "${{ vars.AZURE_RESOURCE_GROUP }}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "OIDC vars missing — skip Azure (Step 12b compile-only)."
+          fi
+
+      - uses: azure/login@v2
+        if: steps.oidc.outputs.configured == 'true'
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: What-if or apply
+        if: steps.oidc.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          RG="${{ vars.AZURE_RESOURCE_GROUP }}"
+          FILE="infra/bicep/main.bicep"
+          PARAM="infra/bicep/parameters/${{ inputs.environment }}.bicepparam"
+          if [ "${{ inputs.action }}" = "apply" ]; then
+            az deployment group create --resource-group "$RG" --template-file "$FILE" --parameters "$PARAM"
+          else
+            az deployment group what-if --resource-group "$RG" --template-file "$FILE" --parameters "$PARAM"
+          fi
+
+      - name: Skip Azure
+        if: steps.oidc.outputs.configured != 'true'
+        run: echo "No Entra OIDC vars on this Environment. infra.yml stays green without an Azure account."

@@ -12,6 +12,9 @@ public class CenterIsolationFromBrokerTests
         var csproj = File.ReadAllText(Path.Combine(RepoRoot(), "src", center, $"{center}.csproj"));
         Assert.DoesNotContain("RabbitMQ", csproj, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Testcontainers", csproj, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Azure.Messaging.ServiceBus", csproj, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Azure.Messaging.EventHubs", csproj, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Npgsql", csproj, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -30,6 +33,9 @@ public class CenterIsolationFromBrokerTests
             var text = File.ReadAllText(file);
             Assert.DoesNotContain("RabbitMQ", text, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("RabbitMq", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("ServiceBus", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("EventHub", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Npgsql", text, StringComparison.OrdinalIgnoreCase);
         }
     }
 

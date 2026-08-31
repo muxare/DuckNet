@@ -36,25 +36,26 @@ Also required in the same file:
 
 Do not skip this when the step is “just wiring”.
 
-## Layout (Step 11)
+## Layout (Step 12b)
 
 ```
 src/DuckNet.AppHost/          # Aspire: telemetry + alarm + dashboard + billing + RabbitMQ
 src/DuckNet.ServiceDefaults/  # OTel + DuckNet.* ActivitySources
 src/DuckNet.Contracts/        # EventEnvelope (TraceId, CausationId), Squeaked v1/v2, AlarmRaised, AlarmResolved, FeeReserved, FeeReleased
-src/DuckNet.EventBus/         # IEventBus, InMemoryEventBus, RabbitMqEventBus, EventBusFactory, hostile wrappers, HttpLogClient, upcasters, DuckNetTracing
+src/DuckNet.EventBus/         # IEventBus, InMemoryEventBus, RabbitMqEventBus, ServiceBusEventBus, EventHubsLogWriter, EventBusFactory
 src/DuckNet.Kernel/           # primitives + Step 3 console
   Transport/                  # LogTailFeeder (SQLite)
   Consumer/                   # Inbox + PerKeySequencer + checkpoint + RetryPipeline + ShardWorkerPool
   Producer/                   # DuckSimulator (LoudDuck), TransactionalPublisher, OutboxDispatcher
-  Persistence/                # KernelDb + per-Center schema + dead_letter_queue + event_log trace columns
+  Persistence/                # KernelDb (SQLite) + PostgresKernelDb + per-Center schema
 src/DuckNet.TelemetryCenter/  # owns event_log writes; GET/POST /bus/events; POST /bus/poison; LoudDuck
 src/DuckNet.AlarmCenter/      # own DB; rate window; AlarmRaised / AlarmResolved via outbox; upcast Squeaked; DLQ; shards
 src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db; DLQ; GET /metrics
 src/DuckNet.BillingCenter/    # own DB; saga on AlarmRaised / AlarmResolved; timeout compensation; FeeReserved / FeeReleased
 tests/                        # kernel + EventBus + AlarmCenter + DashboardCenter + BillingCenter
+infra/bicep/                  # Azure resources (compile in 12b, apply in 12c)
 infra/docker/                 # one Dockerfile per Center
-.github/workflows/            # ci.yml, claude-review.yml, refactor-scan.yml, deploy-center.yml
+.github/workflows/            # ci.yml, claude-review.yml, refactor-scan.yml, deploy-center.yml, infra.yml
 ```
 
 ## Build & test
@@ -148,7 +149,7 @@ Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; c
 | 10 | complete | `step-10` → `main` |
 | 11 | complete | `step-11` → `main` |
 | 12a | complete | `step-12a` → `main` |
-| 12b | planned | Azure-ready IaC + adapters (no live deploy) |
+| 12b | complete | `step-12b` |
 | 12c | planned | First Azure environment (needs subscription) |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

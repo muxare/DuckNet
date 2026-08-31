@@ -1,6 +1,6 @@
 # Azure deployment — learning notes
 
-Learning document, not as-built. DuckNet today runs on Aspire + SQLite + an HTTP event log (system of record) + RabbitMQ behind `IEventBus` (live fan-out). Azure is **not implemented** (`infra/bicep/` does not exist yet). Phase D in [ImplementationPlan.md](../ImplementationPlan.md) is split: **12a** CD/identity contract, **12b** Bicep + adapters, **12c** first live environment. This file explains **how** a system like this maps to Azure, **what** is industry-standard in 2026 given the Aspire inner loop, **how** that standard moved since 2018, and **what it costs** as a lab. The pipeline/OIDC spec is [cd-contract.md](./cd-contract.md), not this file.
+Learning document, not as-built. DuckNet today runs on Aspire + SQLite + an HTTP event log (system of record) + RabbitMQ behind `IEventBus` (live fan-out). **12b wrote** [`infra/bicep/`](../infra/bicep/) and Azure adapters; they are **not applied** (no subscription, no live env). Phase D in [ImplementationPlan.md](../ImplementationPlan.md) is split: **12a** CD/identity contract, **12b** Bicep + adapters (this code), **12c** first live environment. This file explains **how** a system like this maps to Azure, **what** is industry-standard in 2026 given the Aspire inner loop, **how** that standard moved since 2018, and **what it costs** as a lab. The pipeline/OIDC spec is [cd-contract.md](./cd-contract.md), not this file.
 
 You do **not** break the system apart to put it on Azure. It is already four processes, four databases, a broker, and one integration seam (`IEventBus`). Aspire is the local orchestrator. Azure replaces the stand-ins: SQLite → PostgreSQL, HTTP `event_log` → Event Hubs, RabbitMQ → Service Bus.
 
@@ -268,4 +268,4 @@ Aspire (`azd up`) can provision Option B/C from the existing AppHost. Bicep is t
 - **Prove the Telia-shaped story (independent deploy, broker, replay, no shared DB):** Option C. Step 11 already proved the local `IEventBus` port with RabbitMQ; Step 12 swaps that adapter to Azure.
 - **Skip AKS** for this repo. It adds cluster tax without teaching Center isolation.
 
-When Phase D is implemented: **12a** contract (done on `step-12a`) → **12b** Bicep skeleton + OIDC-ready YAML + Postgres provider + `IEventBus` Azure adapter → **12c** first `dev` apply. AppHost remains the local demo. Do not skip 12a to “just azd up.”
+When Phase D is implemented: **12a** contract (done) → **12b** Bicep + OIDC-ready YAML + Postgres provider + `IEventBus` Azure adapter (done on `step-12b`) → **12c** first `dev` apply. AppHost remains the local demo. Do not skip 12a to “just azd up.”

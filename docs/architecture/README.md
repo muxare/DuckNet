@@ -19,7 +19,8 @@ Target roadmap (all steps, high-level): [DuckNetArchitectureSteps.html](../../Du
 | 10 | [step-10.md](./step-10.md) | Billing saga: reserve on alarm, release or timeout compensate |
 | 11 | [step-11.md](./step-11.md) | IEventBus port: RabbitMQ in Aspire, in-memory in tests |
 | 12a | [step-12a.md](./step-12a.md) | CD contract: GitHub Actions + OIDC; no Azure resources yet |
+| 12b | [step-12b.md](./step-12b.md) | Bicep + ServiceBusEventBus + Postgres provider; no live Azure |
 
-After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md). Current on `main`: Step 12a (CD contract). Next: 12b (Bicep + adapters), 12c (live Azure).
+After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md). Current on `main`: Step 12a (CD contract). This branch: 12b (Bicep + adapters). Next: 12c (live Azure).
 
 Related (not as-built runtime): [Azure deployment — learning notes](../azure-deployment.md) — how this Aspire multi-Center shape maps to Azure, 2018–2026 industry path, lab pricing. [CD contract](../cd-contract.md) — identity planes, OIDC, pipeline map. [CI policy and ReviewFlow backlog](../ci-policy.md) — what runs on PRs vs later/nightly.

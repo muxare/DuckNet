@@ -143,6 +143,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -166,6 +167,16 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # GHCR packages pushed by the deploy job are private by default;
+      # an anonymous pull on this fresh runner would be denied.
+      - name: Login GHCR
+        if: steps.oidc.outputs.configured == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: ACR push and Container App revision
         if: steps.oidc.outputs.configured == 'true'

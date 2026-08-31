@@ -83,6 +83,14 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = [
           targetPort: 8080
           allowInsecure: false
         }
+        // AcrPull RBAC alone is not used for pulls; the app must name the
+        // registry and the identity to authenticate with.
+        registries: [
+          {
+            server: acrLoginServer
+            identity: app.identityId
+          }
+        ]
         secrets: [
           {
             name: 'ai-connection'
@@ -111,10 +119,6 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = [
               {
                 name: 'DUCKNET_ACR'
                 value: acrLoginServer
-              }
-              {
-                name: 'DUCKNET_BUS'
-                value: 'servicebus'
               }
               {
                 name: 'DUCKNET_SERVICEBUS_NAMESPACE'

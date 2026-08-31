@@ -4,7 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <NoWarn>$(NoWarn);NU1903</NoWarn>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
@@ -14,6 +13,8 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.8.1" />
+    <!-- Overrides the vulnerable SSH.NET 2024.2.0 pulled in by Testcontainers (GHSA-q939-rpr3-3284). -->
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
 
   <ItemGroup>

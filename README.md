@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 11 — swap the transport (`IEventBus` → RabbitMQ)**.
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 11 complete** — RabbitMQ behind `IEventBus`. Next is [Step 12 (Azure)](./ImplementationPlan.md#step-12-future--host-on-azure).
 
 ## Rules
 
@@ -174,7 +174,7 @@ dotnet run --project src/DuckNet.Kernel -- --mis-demo --reset-db --seconds 5
 
 Agent shortcuts: `/run-demo`, `/mis-demo`.
 
-**What to look for (Aspire):** Open the **dashboard** resource URL — **Developer** is the default (Vue Flow graph of Centers, live offsets, click a circle for that Center's process, **Objects** for types, **All detail** for the whole graph). Hover a node, edge, or live number; press **T** to pin the card; **T** again on a highlighted word to drill down; **Esc** closes. **Read model** is the hour-bucket table. The Vue app polls each Center as a browser; DashboardCenter does not call the others. **Traces** — filter `handle.Squeaked`, click a row; `simulate.squeak` / `append.log` / both Centers share one `TraceId`. **Saga** — Billing drill-in or `GET /sagas`; fast resolve from the Alarm panel (or `POST` alarm `/alarms/duck-1/resolve`) → `Released`; wait 15s → `Expired`. LoudDuck's shard has queue depth and lag. `/stats` `database` is still each Center's file, never a shared DB.
+**What to look for (Aspire):** Open the **dashboard** resource URL — **Developer** is the default (Vue Flow graph of Centers, live offsets, click a circle for that Center's process, **Objects** for types, **All detail** for the whole graph). Hover a node, edge, or live number; press **Enter** (or the **Pin** chip) to pin the card; hover a wiki term and **Enter** again to stack another card; **Esc** pops. **Read model** is the hour-bucket table. The Vue app polls each Center as a browser; DashboardCenter does not call the others. **Traces** — filter `handle.Squeaked`, click a row; `simulate.squeak` / `append.log` / both Centers share one `TraceId`. **Saga** — Billing drill-in or `GET /sagas`; fast resolve from the Alarm panel (or `POST` alarm `/alarms/duck-1/resolve`) → `Released`; wait 15s → `Expired`. LoudDuck's shard has queue depth and lag. `/stats` `database` is still each Center's file, never a shared DB.
 
 **What to look for (kernel):** `--hot-demo --shard-count 1` → every duck's `maxLagMs` is huge. `--shard-count 3` → only keys that hash onto the LoudDuck shard lag; others stay around the handle delay. With defenses on and no poison, `Published == Counted` and `Out of order == 0`.
 
@@ -184,7 +184,7 @@ Agent shortcuts: `/run-demo`, `/mis-demo`.
 src/DuckNet.AppHost/          # Aspire orchestration
 src/DuckNet.ServiceDefaults/  # OTel + DuckNet.* ActivitySources
 src/DuckNet.Contracts/        # event records + versions only
-src/DuckNet.EventBus/         # IEventBus + HTTP log adapter + upcasters + tracing
+src/DuckNet.EventBus/         # IEventBus + InMemory + RabbitMQ + HTTP log + upcasters + tracing
 src/DuckNet.Kernel/           # durable primitives + console (shards, retry, DLQ CLI)
 src/DuckNet.TelemetryCenter/  # owns event_log; LoudDuck; POST /bus/poison
 src/DuckNet.AlarmCenter/      # own DB, rate rule, AlarmRaised / AlarmResolved, DLQ, shards
@@ -215,8 +215,9 @@ infra/docker/                 # one image per Center
 | 7 | complete | One poison message; retry → DLQ; stream continues |
 | 8 | complete | LoudDuck + sharding; quiet keys stay near real-time |
 | 9 | complete | Envelope TraceId + OTel; one squeak, one Aspire trace |
-| 10 | in progress | Billing saga: reserve on alarm, release or timeout compensate |
-| 11+ | planned | See [ImplementationPlan.md](./ImplementationPlan.md) |
+| 10 | complete | Billing saga: reserve on alarm, release or timeout compensate |
+| 11 | complete | `IEventBus` port: RabbitMQ in Aspire, in-memory in tests |
+| 12 | planned | Azure hosting + per-Center CD — [ImplementationPlan.md](./ImplementationPlan.md) |
 
 ## Docs
 

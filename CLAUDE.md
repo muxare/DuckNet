@@ -66,7 +66,7 @@ dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
 dotnet run --project src/DuckNet.AppHost
 ```
 
-Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 5), `/refactor-scan`. Format hook: `dotnet format` on `*.cs` after agent edits.
+Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (AppHost), `/refactor-scan`. Format hook: `dotnet format` on `*.cs` after agent edits.
 
 ## PR review
 
@@ -146,6 +146,7 @@ Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; c
 | 8 | complete | `step-8` → `main` |
 | 9 | complete | `step-9` → `main` |
 | 10 | complete | `step-10` → `main` |
-| 11 | in progress | `step-11` |
+| 11 | complete | `step-11` → `main` |
+| 12 | planned | Azure — see [ImplementationPlan.md](./ImplementationPlan.md) |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

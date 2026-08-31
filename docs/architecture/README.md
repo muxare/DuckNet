@@ -19,6 +19,6 @@ Target roadmap (all steps, high-level): [DuckNetArchitectureSteps.html](../../Du
 | 10 | [step-10.md](./step-10.md) | Billing saga: reserve on alarm, release or timeout compensate |
 | 11 | [step-11.md](./step-11.md) | IEventBus port: RabbitMQ in Aspire, in-memory in tests |
 
-After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md).
+After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md). Current on `main`: Step 11. Next: Step 12 (Azure).
 
 Related (not as-built): [Azure deployment — learning notes](../azure-deployment.md) — how this Aspire multi-Center shape maps to Azure, what was standard from 2018 to 2026, and lab pricing. Azure itself is Step 12; `infra/bicep/` is not in the repo yet. [CI policy and ReviewFlow backlog](../ci-policy.md) — what runs on PRs vs later/nightly.

@@ -2,6 +2,26 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-08-31 — Docs aligned to Step 11 as-built
+
+### What changed
+User-facing and agent docs were still describing Step 5 / Step 10. Steps 0–11 are on `main`. Updated README status, inspect keys (Enter not T), azure-deployment “today”, CLAUDE/AGENTS step table, AGENTS ReviewFlow (was Codex-review.yml), ImplementationPlan current banner + SQLite-through-11 deviation + honest DoD, CentersBuildPlan .NET 10.
+
+### Architecture impact
+```mermaid
+flowchart LR
+  code["main: 4 Centers + RabbitMQ + HTTP log"]
+  docs["README / plan / azure notes / CLAUDE"]
+  code --> docs
+```
+
+### How to test
+- Skim README roadmap: 11 complete, 12 planned.
+- Skim [docs/azure-deployment.md](./azure-deployment.md) “What you have today (Step 11)”.
+
+### Follow-ups
+**Process (not this pass):** create missing `git tag step-2` … `step-11`. MCP ops and `infra/bicep/` remain Step 12 / CCA-F D2.
+
 ## 2026-08-31 — Inspect pin: Enter + chip, drop T
 
 ### What changed

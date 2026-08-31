@@ -53,7 +53,7 @@ src/DuckNet.DashboardCenter/  # own DB; Vue UI; squeaks_by_duck_hour + volume_db
 src/DuckNet.BillingCenter/    # own DB; saga on AlarmRaised / AlarmResolved; timeout compensation; FeeReserved / FeeReleased
 tests/                        # kernel + EventBus + AlarmCenter + DashboardCenter + BillingCenter
 infra/docker/                 # one Dockerfile per Center
-.github/workflows/            # ci.yml, Codex-review.yml, deploy-center.yml
+.github/workflows/            # ci.yml, claude-review.yml, refactor-scan.yml, deploy-center.yml
 ```
 
 ## Build & test
@@ -65,26 +65,43 @@ dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
 dotnet run --project src/DuckNet.AppHost
 ```
 
-Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (Step 5), `/refactor-scan`. Format hook: `dotnet format` on `*.cs` after agent edits.
+Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (AppHost), `/refactor-scan`. Format hook: `dotnet format` on `*.cs` after agent edits.
 
 ## PR review
 
-Every PR gets two headless Codex reviews (`Codex-review.yml`), each via
-`Codex -p --output-format json --json-schema`, each with its own sticky comment:
+`claude-review.yml` is a ReviewFlow-style loop: **triage → specialists → one
+aggregated comment**. Specialists are isolated (no shared conversation); they
+read `review-state.json` plus a file-subset diff. Aggregation is `jq`, not a
+model.
 
-| Review | Prompt | Output | Looks for |
-|--------|--------|--------|-----------|
-| Architecture | `architecture-review.md` | `{ verdict, violations[], notes[] }` | The five rules above |
-| Code | `code-review.md` | `{ verdict, findings[], notes[] }` | Bugs, tests, security, reliability, contract breaks |
+| Stage | Prompt / job | Output | Looks for |
+|--------|--------------|--------|-----------|
+| Triage | `triage.md` (Haiku, no tools, ~$0.10) | `review-state.json` | Risk + which specialists to run |
+| Architecture | `architecture-review.md` (Haiku, if requested) | findings | The five rules above |
+| Security | `security-review.md` (Haiku, if requested) | findings | Secrets, payload parse, auth |
+| Aggregate | `.github/scripts/aggregate-review.sh` | one sticky comment | Merge only — no Claude |
 
-**Both are advisory** — `ci.yml` decides merge. Drafts and docs-only PRs
-(`docs/**`, `*.md`, `*.html`) are skipped. Architecture uses Haiku with no
-tools; code uses Sonnet with `--max-turns 4` and a $0.15 cap.
+**Advisory** — `ci.yml` decides merge. Review jobs fail only on infrastructure
+(missing `CLAUDE_CODE_OAUTH_TOKEN`), never on a `request_changes` verdict.
+Drafts and docs-only PRs (`docs/**`, `*.md`, `*.html`) are skipped. Low-risk
+PRs skip specialists after triage. `code-review.md` is kept on disk but not
+invoked until this loop is boring. Later and parked work: [docs/ci-policy.md](docs/ci-policy.md).
 
-Mention `@Codex` on any PR or issue to ask questions interactively
-(`Codex.yml`).
+Mention `@claude` on any PR or issue to ask questions interactively
+(`claude.yml`).
 
-Requires the repo secret `CLAUDE_CODE_OAUTH_TOKEN` (`Codex setup-token`).
+## Refactor scan
+
+`refactor-scan.yml` is weekly (Monday) + `workflow_dispatch`. Whole-tree, not
+a PR diff: Sonnet finds opportunities, a second Sonnet session scores
+confidence, `jq` merges. CI creates or updates one GitHub issue per held
+patch finding and per plan-tier `proposed_issues` item (dedupe open issues by
+scan marker, then title; skip if a matching `refactor-scan` issue is already
+closed). Advisory — not a merge gate, not on PRs. Local: `/refactor-scan` or
+`bash .github/scripts/run-refactor-scan.sh` (prints JSON; does not open issues).
+
+Both review and the refactor scan need the repo secret `CLAUDE_CODE_OAUTH_TOKEN`
+(`claude setup-token`).
 
 ## Agent automation opportunities (CCA-F)
 
@@ -95,15 +112,15 @@ DuckNet is a CCA-F study lab. While working, **spot and propose** reusable agent
 | Need | Where |
 |------|--------|
 | Always-on rules, layout, commands to run | this file |
-| Task-specific procedure Codex may auto-invoke | `.Codex/skills/<name>/SKILL.md` |
-| Human-triggered team workflow (`/foo`) | `.Codex/commands/<name>.md`, or a skill with `disable-model-invocation: true` |
+| Task-specific procedure the agent may auto-invoke | `.agents/skills/<name>/SKILL.md` |
+| Human-triggered team workflow (`/foo`) | `.agents/skills/source-command-*/SKILL.md`, or `.claude/commands/<name>.md` |
 | Must-happen side effect (format, block, gate) | hook (`PreToolUse` / `PostToolUse`), not a prompt |
 | Verbose or exploratory work | skill with `context: fork`, or a subagent — keep the parent context clean |
 
 **Hunt for:**
 
 - Repeated prompts, step checklists, or “remember to…” — skill with a sharp `description` (drives auto-invoke), `argument-hint`, and supporting files. Fork if the output is noisy.
-- Shared `/review`, `/run-demo`, `/new-center` style workflows — project command in `.Codex/commands/` (not `~/.Codex/commands/`).
+- Shared `/review`, `/run-demo`, `/new-center` style workflows — project command in `.claude/commands/` (or an `.agents` skill with `disable-model-invocation: true`).
 - Prompt-only “must” rules that still fail — hook. Deterministic compliance beats hoping the model obeys.
 - Work with a verifiable stop (tests green, demo runs, schema valid) — an **agentic loop**: model-driven `tool_use` until `end_turn`; stop on evidence, not an arbitrary turn cap. Feed tool results back in; do not parse prose for “done”.
 - Multi-concern or parallel investigation — coordinator + isolated subagents; pass complete findings in the child prompt (subagents do not inherit parent context).
@@ -128,6 +145,7 @@ Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; c
 | 8 | complete | `step-8` → `main` |
 | 9 | complete | `step-9` → `main` |
 | 10 | complete | `step-10` → `main` |
-| 11 | in progress | `step-11` |
+| 11 | complete | `step-11` → `main` |
+| 12 | planned | Azure — see [ImplementationPlan.md](./ImplementationPlan.md) |
 
 See [ImplementationPlan.md](./ImplementationPlan.md) for full roadmap.

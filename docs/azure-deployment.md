@@ -1,8 +1,8 @@
 # Azure deployment — learning notes
 
-Learning document, not as-built. DuckNet today runs on Aspire + SQLite + an HTTP log tail. Azure is **not implemented** (`infra/bicep/` does not exist yet). Step 12 in [ImplementationPlan.md](../ImplementationPlan.md) is the production-shaped target. This file explains **how** a system like this maps to Azure, **what** is industry-standard in 2026 given the Aspire inner loop, **how** that standard moved since 2018, and **what it costs** as a lab.
+Learning document, not as-built. DuckNet today runs on Aspire + SQLite + an HTTP event log (system of record) + RabbitMQ behind `IEventBus` (live fan-out). Azure is **not implemented** (`infra/bicep/` does not exist yet). Step 12 in [ImplementationPlan.md](../ImplementationPlan.md) is the production-shaped target. This file explains **how** a system like this maps to Azure, **what** is industry-standard in 2026 given the Aspire inner loop, **how** that standard moved since 2018, and **what it costs** as a lab.
 
-You do **not** break the system apart to put it on Azure. It is already three processes, three databases, and one integration seam (`IEventBus`). Aspire is the local orchestrator; the HTTP log tail in [`HttpLogTailFeeder.cs`](../src/DuckNet.EventBus/HttpLogTailFeeder.cs) is a stand-in for a broker. Azure replaces those stand-ins.
+You do **not** break the system apart to put it on Azure. It is already four processes, four databases, a broker, and one integration seam (`IEventBus`). Aspire is the local orchestrator. Azure replaces the stand-ins: SQLite → PostgreSQL, HTTP `event_log` → Event Hubs, RabbitMQ → Service Bus.
 
 ## Industry standard given this Aspire setup
 
@@ -17,31 +17,38 @@ flowchart LR
     T1[Telemetry]
     A1[Alarm]
     D1[Dashboard]
+    B1[Billing]
+    MQ1[RabbitMQ]
     AH --> T1
     AH --> A1
     AH --> D1
+    AH --> B1
+    AH --> MQ1
   end
   subgraph azure [Azure same Center binaries]
     Env[Container Apps Environment]
     T2[telemetry app]
     A2[alarm app]
     D2[dashboard app]
+    B2[billing app]
     Env --> T2
     Env --> A2
     Env --> D2
+    Env --> B2
   end
   T1 -.->|same image| T2
   A1 -.->|same image| A2
   D1 -.->|same image| D2
+  B1 -.->|same image| B2
 ```
 
 How the rest of the stack maps, in order of how common it is in industry:
 
-- **Compute — Container Apps (standard for this shape).** Independent deploy, KEDA scale on queue depth, no cluster to own. App Service is still the most common *existing* Azure host for .NET web apps, but it is a 2015-era fit: one plan, Always On, hosted services as WebJobs. AKS is standard when a platform team already runs Kubernetes for 20+ services; for three Centers it is extra tax. Functions are standard for *triggered* glue (one message → one execution); they fight this codebase’s always-on inbox/outbox/sequencer loop.
-- **Messaging — Service Bus topics + subscriptions (standard for .NET business events).** One topic, one subscription per consumer group (`alarm-center`, `dashboard-projector`). That is what NServiceBus/MassTransit default to on Azure. Event Hubs is standard for high-throughput *logs* (IoT, telemetry, replay, partition keys) — the Telia lesson — not for the median three-service domain. **Using both** (Hubs as system of record, Service Bus as fan-out) is a valid CQRS pattern and matches Step 12, but it is heavier than most shops this size. HTTP `EVENT_LOG_URL` is a teaching stand-in, not a production bus.
+- **Compute — Container Apps (standard for this shape).** Independent deploy, KEDA scale on queue depth, no cluster to own. App Service is still the most common *existing* Azure host for .NET web apps, but it is a 2015-era fit: one plan, Always On, hosted services as WebJobs. AKS is standard when a platform team already runs Kubernetes for 20+ services; for four Centers it is extra tax. Functions are standard for *triggered* glue (one message → one execution); they fight this codebase’s always-on inbox/outbox/sequencer loop.
+- **Messaging — Service Bus topics + subscriptions (standard for .NET business events).** One topic, one subscription per consumer group (`alarm-center`, `dashboard-projector`, `billing-center`). That is what NServiceBus/MassTransit default to on Azure. Event Hubs is standard for high-throughput *logs* (IoT, telemetry, replay, partition keys) — the Telia lesson — not for the median four-service domain. **Using both** (Hubs as system of record, Service Bus as fan-out) is a valid CQRS pattern and matches Step 12, but it is heavier than most shops this size. Locally, HTTP `EVENT_LOG_URL` is the log/replay path; RabbitMQ (Step 11) is the live `IEventBus`. Azure replaces those two roles, not Center handlers.
 - **Data — Azure SQL or PostgreSQL Flexible Server, database per Center (standard).** One server, separate databases, is normal. Cosmos is the standard when partition key / RU / global distribution is the point. SQLite is local-only.
 - **Identity / telemetry — Managed Identity + Key Vault + Application Insights (standard).** Connection strings are not in GitHub secrets long-term; OpenTelemetry already in Aspire just changes exporter.
-- **CI/CD — GitHub Actions OIDC → ACR → update one Container App (standard).** That is the shape of [`deploy-center.yml`](../.github/workflows/deploy-center.yml). `azd up` is Microsoft’s shortcut from AppHost; many enterprises still write Bicep/Terraform by hand. Independent per-Center deploy is the microservice norm; deploying the whole compose stack as one unit is the exception (Option A below).
+- **CI/CD — GitHub Actions OIDC → ACR → update one Container App (standard).** That is the *shape* of [`deploy-center.yml`](../.github/workflows/deploy-center.yml) (today: per-Center image to GHCR). `azd up` is Microsoft’s shortcut from AppHost; many enterprises still write Bicep/Terraform by hand. Independent per-Center deploy is the microservice norm; deploying the whole compose stack as one unit is the exception (Option A below).
 
 **Aspire-native path vs enterprise-legacy path**
 
@@ -113,31 +120,39 @@ What a Telia-like “Centers + events + own DBs” stack looked like in each era
 
 DuckNet is practicing 2018 messaging correctness on a 2024–2026 inner loop.
 
-## What you have today (Step 5)
+## What you have today (Step 11)
 
 ```mermaid
 flowchart LR
   subgraph local [Aspire AppHost local only]
+    MQ[RabbitMQ]
     T[TelemetryCenter]
     A[AlarmCenter]
     D[DashboardCenter]
+    B[BillingCenter]
     Tdb[("telemetry.db")]
     Adb[("alarm.db")]
     Ddb[("dashboard.db")]
+    Bdb[("billing.db")]
     T --- Tdb
     A --- Adb
     D --- Ddb
+    B --- Bdb
   end
   A -->|"GET /bus/events EVENT_LOG_URL"| T
   D -->|"GET /bus/events EVENT_LOG_URL"| T
+  B -->|"GET /bus/events EVENT_LOG_URL"| T
+  A --> MQ
+  D --> MQ
+  B --> MQ
 ```
 
-- Three ASP.NET apps, each with its own SQLite file and Dockerfile under [`infra/docker/`](../infra/docker/).
-- Alarm and Dashboard **do not call each other**. They poll Telemetry’s bus HTTP (`EVENT_LOG_URL`). That is the transport adapter, not a business API.
+- Four ASP.NET apps, each with its own SQLite file and Dockerfile under [`infra/docker/`](../infra/docker/). Aspire also runs a RabbitMQ container.
+- Alarm, Dashboard, and Billing **do not call each other**. They tail Telemetry’s log HTTP (`EVENT_LOG_URL`) and publish onto **per-Center** RabbitMQ topic exchanges via `EventBusFactory.Create()`. That is the transport adapter, not a business API. See [step-11 as-built](./architecture/step-11.md).
 - Shared code (`Contracts`, `Kernel`, `EventBus`) is compiled **into each image**. There is no shared runtime or shared DB.
 - [`deploy-center.yml`](../.github/workflows/deploy-center.yml) already builds and pushes per-Center images to GHCR. It does **not** yet talk to Azure.
 
-Consumers are **always-on background loops** (poll about every 20 ms). They are not request-driven Functions. That constraint drives hosting and price: scale-to-zero misses events unless a real queue with a scaler is in front.
+Consumers are **always-on background loops** (poll the log, then consume the broker). They are not request-driven Functions. That constraint drives hosting and price: scale-to-zero misses events unless a real queue with a scaler is in front.
 
 ## What “deploy to Azure” actually swaps
 
@@ -145,34 +160,34 @@ Consumers are **always-on background loops** (poll about every 20 ms). They are 
 |---|---|---|
 | `DuckNet.AppHost` | Container Apps Environment, App Service Plan, or one VM | No — AppHost stays for laptop demos |
 | SQLite files | PostgreSQL (one **database** per Center) or Azure Files for SQLite | Connection string / provider; schemas stay owned per Center |
-| `GET /bus/events` HTTP tail | Keep it (lift-and-shift) **or** Service Bus / Event Hubs behind `IEventBus` | Only [`DuckNet.EventBus`](../src/DuckNet.EventBus/) if you swap transport |
+| HTTP `event_log` + RabbitMQ behind `IEventBus` | Event Hubs (replay / SoR) + Service Bus (fan-out), or keep HTTP as lift-and-shift | Only [`DuckNet.EventBus`](../src/DuckNet.EventBus/) if you swap transport |
 | Aspire dashboard / OpenTelemetry | Application Insights | Exporter endpoint |
 | Env vars in AppHost | Key Vault + Container App settings | No handler changes |
 
-Rule 2 stays: one PostgreSQL **server** with separate databases (`telemetry`, `alarm`, `dashboard`) is fine. One **shared schema** is not.
+Rule 2 stays: one PostgreSQL **server** with separate databases (`telemetry`, `alarm`, `dashboard`, `billing`) is fine. One **shared schema** is not.
 
 You would **not** split AlarmCenter into “an App Service + a queue app + a DB app”. Each Center stays one deployable unit that happens to expose HTTP **and** run a consumer. Queues and DBs are **infrastructure the Center uses**, not extra applications you carve out of it.
 
 ## Option A — Cheapest lab: one VM or Container Instance
 
-Run the three containers (or even Aspire) on a single `B1s`/`B2s` Linux VM or an Azure Container Instance group. SQLite on disk. Keep `EVENT_LOG_URL` as internal HTTP.
+Run the four Center containers (or even Aspire) on a single `B1s`/`B2s` Linux VM or an Azure Container Instance group. SQLite on disk. Keep `EVENT_LOG_URL` as internal HTTP; optionally run RabbitMQ on the same VM.
 
 - **Azure resources:** 1 VM (or ACI), public IP, maybe a storage disk. Optional: GitHub Actions SSH deploy.
 - **Code change:** none.
 - **Price:** roughly **$8–20/month** if left on; near **$0** if you deallocate between demos.
 - **Tradeoff:** does not prove independent Center deploys or managed messaging. Fine for “it runs in the cloud.”
 
-## Option B — Lift-and-shift: three Container Apps, keep HTTP bus + SQLite
+## Option B — Lift-and-shift: four Container Apps, keep HTTP log + SQLite
 
-Map [`AppHost Program.cs`](../src/DuckNet.AppHost/Program.cs) 1:1: one Container App per Center, inject `EVENT_LOG_URL` to Telemetry’s internal URL. Mount Azure Files so SQLite survives restarts (`minReplicas: 1` because of the poll loop).
+Map [`AppHost Program.cs`](../src/DuckNet.AppHost/Program.cs) 1:1: one Container App per Center, inject `EVENT_LOG_URL` to Telemetry’s internal URL, and either keep a RabbitMQ container or skip the broker and stay on HTTP tail only. Mount Azure Files so SQLite survives restarts (`minReplicas: 1` because of the poll loop).
 
-- **Azure resources:** Resource group, Container Apps Environment, 3 Container Apps, Azure Files, Log Analytics, ACR (or GHCR), optional App Insights.
-- **Code change:** almost none. Persistence path via `DUCKNET_DB`. Networking so Alarm/Dashboard can reach Telemetry.
+- **Azure resources:** Resource group, Container Apps Environment, 4 Container Apps, Azure Files, Log Analytics, ACR (or GHCR), optional App Insights (plus a RabbitMQ Container App if you keep Step 11’s broker).
+- **Code change:** almost none. Persistence path via `DUCKNET_DB`. Networking so Alarm/Dashboard/Billing can reach Telemetry (and RabbitMQ if kept).
 - **CI:** extend `deploy-center.yml` with `az containerapp update --image ...` (already sketched for Step 12).
-- **Price (always-on, 0.25–0.5 vCPU / 0.5–1 GiB each):** roughly **$25–50/month** (compute + files + logs). Scale-to-zero is unsafe here: the consumer would stop polling.
-- **Tradeoff:** still no real broker. SQLite on Azure Files is OK for a toy, not for concurrent writers. Independent deploy **does** work.
+- **Price (always-on, 0.25–0.5 vCPU / 0.5–1 GiB each):** roughly **$30–60/month** (compute + files + logs). Scale-to-zero is unsafe here: the consumer would stop polling.
+- **Tradeoff:** SQLite on Azure Files is OK for a toy, not for concurrent writers. Independent deploy **does** work. Skipping RabbitMQ and staying on HTTP tail does not prove a managed broker.
 
-App Service variant of B: one Linux **B1** plan (~$13) hosting three Web Apps, Always On, SQLite under `/home`. Cheaper compute, less “one Center = one scale unit.” Same HTTP wiring.
+App Service variant of B: one Linux **B1** plan (~$13) hosting four Web Apps, Always On, SQLite under `/home`. Cheaper compute, less “one Center = one scale unit.” Same HTTP wiring.
 
 ## Option C — Production-shaped (locked in as Step 12)
 
@@ -184,27 +199,31 @@ flowchart TB
     T[TelemetryCenter]
     A[AlarmCenter]
     D[DashboardCenter]
+    B[BillingCenter]
   end
   subgraph data [PostgreSQL Flexible Server]
     Tdb[("db telemetry")]
     Adb[("db alarm")]
     Ddb[("db dashboard")]
+    Bdb[("db billing")]
   end
   EH[Event Hubs ducknet-events]
   SB[Service Bus topic plus subscriptions]
   T --> Tdb
   A --> Adb
   D --> Ddb
+  B --> Bdb
   T -->|"append log partitionKey duckId"| EH
   T -->|"publish"| SB
   A -->|"subscription alarm-center"| SB
   D -->|"subscription dashboard-projector"| SB
+  B -->|"subscription billing-center"| SB
   D -->|"rebuild = replay from start"| EH
 ```
 
 **Resources (dev):**
 
-- Container Apps Environment + 3 apps (later 4 with Billing)
+- Container Apps Environment + 4 apps (telemetry, alarm, dashboard, billing)
 - Azure Database for PostgreSQL Flexible Server **B1ms**, databases per Center
 - Event Hubs (system of record / replay, partition key = `duckId`)
 - Service Bus Standard: topic `ducknet-events`, one subscription per consumer group
@@ -219,13 +238,13 @@ flowchart TB
 
 **Price (dev, left running, West Europe / Sweden Central ballpark):**
 
-- 3 always-on small Container Apps: **$25–45**
+- 4 always-on small Container Apps: **$30–55**
 - PostgreSQL B1ms + 32 GB: **$15–25**
 - Service Bus Standard base: **~$10**
 - Event Hubs Basic 1 TU: **~$11** (skip this line if you use Hubs-only **or** keep the HTTP log)
 - ACR Basic + Key Vault + App Insights (toy volume): **$5–15**
 
-**Total Option C: ~$60–110/month** if you never turn it off. Stop Container Apps + PostgreSQL between demos and it drops hard. A “prod-shaped” SKU (Service Bus Premium, HA Postgres) jumps to hundreds.
+**Total Option C: ~$65–120/month** if you never turn it off. Stop Container Apps + PostgreSQL between demos and it drops hard. A “prod-shaped” SKU (Service Bus Premium, HA Postgres) jumps to hundreds.
 
 These are order-of-magnitude USD figures, not a quote. Recalc in the [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/) for your region.
 
@@ -235,7 +254,7 @@ These are order-of-magnitude USD figures, not a quote. Recalc in the [Azure pric
 
 - **1 Center = 1 compute resource** (Container App or App Service)
 - **1 Center = 1 database** (not 1 server)
-- **1 bus** (HTTP URL today, or one topic / one hub) with **subscriptions / consumer groups**
+- **1 bus** (HTTP log + RabbitMQ today, or one topic / one hub in Azure) with **subscriptions / consumer groups**
 - Outbox, inbox, offsets stay **inside** the Center’s DB
 
 What you configure in Azure Portal / Bicep is connection strings and identities, not a rewrite that extracts Alarm’s rate window into a Function and its HTTP API into another App Service. You *could* do that later (KEDA scale-out, separate API replicas) — that is an ops split, not required by the architecture.
@@ -245,8 +264,8 @@ Aspire (`azd up`) can provision Option B/C from the existing AppHost. Bicep is t
 ## What to pick
 
 - **Industry-standard cloud shape for this repo:** Container Apps (one per Center) + Service Bus topic/subscriptions + Postgres or Azure SQL per Center + App Insights. That is Option C’s compute, with **Service Bus only** unless you specifically want the Event Hubs partition-key lesson.
-- **Prove “it runs in Azure” this weekend:** Option A or B. Keep HTTP `EVENT_LOG_URL`. Do not introduce Service Bus yet.
-- **Prove the Telia-shaped story (independent deploy, broker, replay, no shared DB):** Option C after Step 11 (local RabbitMQ first, then Azure bus). That is the planned path; doing it now would skip Steps 6–11 and mix lessons.
+- **Prove “it runs in Azure” this weekend:** Option A or B. Keep HTTP `EVENT_LOG_URL` (and optionally RabbitMQ). Do not introduce Service Bus yet.
+- **Prove the Telia-shaped story (independent deploy, broker, replay, no shared DB):** Option C. Step 11 already proved the local `IEventBus` port with RabbitMQ; Step 12 swaps that adapter to Azure.
 - **Skip AKS** for this repo. It adds cluster tax without teaching Center isolation.
 
 When Step 12 is implemented: Bicep skeleton, OIDC in `deploy-center.yml`, Postgres provider, then `IEventBus` Azure adapter — in that order, with AppHost remaining the local demo.

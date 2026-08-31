@@ -8,7 +8,16 @@
 
 ## Executive summary
 
-DuckNet is a stepwise .NET 9 learning/production-shaped demo: smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing databases. Each step adds one distributed-systems concept while keeping the demo runnable end-to-end.
+DuckNet is a stepwise .NET 10 learning/production-shaped demo: smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing databases. Each step adds one distributed-systems concept while keeping the demo runnable end-to-end.
+
+**As-built (2026-08-31):** Steps **0–11 are on `main`**. Local demo is Aspire + four Centers + SQLite per Center + HTTP `event_log` (system of record) + RabbitMQ behind `IEventBus`. Azure (`infra/bicep/`) is not started — that is Step 12. Current layout: [CLAUDE.md](./CLAUDE.md) / [README.md](./README.md). As-built diagrams: [docs/architecture/](./docs/architecture/).
+
+Deviations from locks in this plan:
+
+- **PostgreSQL from Step 8** was deferred. SQLite remains through Step 11 (starvation is at the worker/channel layer; see [step-8.md](./docs/architecture/step-8.md)). Azure still targets PostgreSQL.
+- **Git tags** exist only for `step-0` and `step-1`; later steps were merged without tags.
+- **MCP ops** (`ducknet-mcp-ops` / `DuckNet.Mcp`) is still planned, not built.
+- **`deploy-center.yml`** builds and pushes GHCR images; it does not deploy to Azure.
 
 | Phase | Steps | Outcome |
 |-------|-------|---------|
@@ -71,6 +80,8 @@ DuckNet/
 ```
 
 ### Phase B onward — Aspire multi-project
+
+Historical tree when this section was written. **Current as-built (Step 11):** see [CLAUDE.md Layout](./CLAUDE.md#layout-step-11) — includes `ServiceDefaults`, `BillingCenter`, `RabbitMqEventBus`, Vue Dashboard UI, `tests/DuckNet.EventBus.Tests`.
 
 ```
 DuckNet/
@@ -260,7 +271,7 @@ Consumer: Handler → ConsumerOffsetStore
 
 **Implement:**
 
-1. **SQLite first** (locked in for Steps 3–7) — single file per Center for simplicity. **PostgreSQL from Step 8** when concurrent writers matter; same schema, connection string swap only.
+1. **SQLite first** (locked in for Steps 3–7) — single file per Center for simplicity. **PostgreSQL from Step 8** was the original lock for concurrent writers; **deferred** — SQLite remains through Step 11 (see [step-8.md](./docs/architecture/step-8.md)). Azure still swaps to PostgreSQL in Step 12.
 
    **`event_log`** table:
    ```sql
@@ -705,9 +716,9 @@ Consumer: Handler → ConsumerOffsetStore
 Runs on every push/PR to `main`:
 
 ```yaml
-# Jobs: build, test, architecture-test
-# Matrix: os [ubuntu-latest], dotnet [9.x]
-# Steps: restore → build DuckNet.sln → test → (Step 4+) docker build --dry-run
+# Jobs: build-and-test (current: DuckNet.slnx, .NET 10, Node 22, Docker Center images)
+# Matrix: os [ubuntu-latest], dotnet [10.x]
+# Steps: restore → build → test → kernel smoke → docker build Centers
 ```
 
 **Done when:** red PR if tests fail; green main always deployable.
@@ -723,13 +734,13 @@ Runs on every push/PR to `main`:
    - (same pattern for each Center)
    - `src/DuckNet.Contracts/**` or `src/DuckNet.EventBus/**` → deploy **all** Centers (shared contract change)
 
-**Deploy steps (local Docker path, Steps 4–11):**
+**Deploy steps (local Docker path, Steps 4–11) — live:**
 
 1. Build Center container image (`infra/docker/DuckNet.{Center}/Dockerfile`).
 2. Tag: `{registry}/ducknet-{center}:{git-sha}`.
 3. Push to GitHub Container Registry (ghcr.io).
-4. Update Compose / Aspire deploy manifest for that Center only.
-5. Smoke test: HTTP health + consume one synthetic event.
+4. Smoke test: HTTP `/health` on the local image.
+5. Does **not** update a running Aspire/Compose host or Azure (Step 12).
 
 **Deploy steps (Azure path, Step 12+):**
 
@@ -827,7 +838,7 @@ Later / parked ReviewFlow and CI work lives in [docs/ci-policy.md](docs/ci-polic
 
 ### Interview / exam soundbite
 
-*"DuckNet isn't just an event-driven demo — it's my CCA-F study lab: MCP tools for ops, headless Claude triaging every PR then running isolated architecture and security specialists through shared review-state JSON, and Centers orchestrated by events instead of a central conductor."*
+*"DuckNet isn't just an event-driven demo — it's my CCA-F study lab: headless Claude triaging every PR then running isolated architecture and security specialists through shared review-state JSON, and Centers orchestrated by events instead of a central conductor. MCP ops tools for log/DLQ/rebuild are the next D2 slice, not built yet."*
 
 ---
 
@@ -910,7 +921,7 @@ See [docs/ci-policy.md](docs/ci-policy.md) for the ReviewFlow later list (nightl
 | **0** | `ci.yml` + `claude-review.yml` + root `CLAUDE.md` |
 | **4** | Dockerfiles + `deploy-center.yml` (local/ghcr) |
 | **6** | Contract-change → deploy-all fan-out |
-| **9** | MCP ops server for debug + richer review context |
+| **9** | MCP ops server planned (not built — still Step 12-adjacent / CCA-F D2) |
 | **12** | Azure OIDC + Container Apps deploy + App Insights |
 
 ---
@@ -1033,13 +1044,15 @@ Steps 5 and 6 can partially overlap after Step 4; Step 6 should not block Step 5
 
 ## Definition of done (whole project)
 
-- [ ] All steps 0–12 tagged and runnable (local Aspire through Step 11; Azure for Step 12).
-- [ ] Architecture tests enforce Center isolation.
-- [ ] README with demo commands for each step.
-- [ ] `DuckNetArchitectureSteps.html` reflects final architecture (update if implementation diverges).
-- [ ] Single-command demo: squeak → alarm → dashboard → billing trace visible in Aspire / App Insights.
-- [ ] `ci.yml` green on main; `claude-review.yml` posting one aggregated ReviewFlow comment on PRs.
-- [ ] `deploy-center.yml` can deploy any single Center or all to dev/prod.
+- [x] Steps 0–11 on `main` and runnable (local Aspire). Step 12 Azure not started.
+- [ ] All steps 0–12 **tagged** (`git tag` exists only for `step-0` and `step-1` today).
+- [x] Architecture tests enforce Center isolation (`CenterIsolationTests` per Center).
+- [x] README with demo commands for each completed step.
+- [x] `DuckNetArchitectureSteps.html` linked from as-built `docs/architecture/step-N.md` (update again if Step 12 diverges).
+- [x] Single-command local demo: `dotnet run --project src/DuckNet.AppHost` — squeak → alarm → dashboard → billing; traces in Aspire.
+- [ ] Same demo in Azure with traces in App Insights (Step 12).
+- [x] `ci.yml` on main; `claude-review.yml` posting one aggregated ReviewFlow comment on PRs.
+- [ ] `deploy-center.yml` can deploy any single Center or all to Azure dev/prod (today: GHCR image push + local `/health` smoke only).
 - [ ] MCP ops tools documented for log replay, DLQ inspect, dashboard rebuild (CCA-F D2).
 
 ---
@@ -1051,7 +1064,7 @@ Resolved before Step 4 implementation:
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Database (Steps 3–7)** | **SQLite** per Center | Zero ops locally; file-per-DB keeps Rule 2 obvious |
-| **Database (Steps 8+)** | **PostgreSQL** per Center | Hot-partition / concurrent writer demo needs real concurrency; same schema, swap connection string |
+| **Database (Steps 8+ local)** | **SQLite still** (Postgres deferred) | Hot-partition demo is worker/channel starvation; `KernelDb` serializes writes. See [step-8.md](./docs/architecture/step-8.md) |
 | **Database (Step 12 Azure)** | **Azure Database for PostgreSQL** — one server, separate DB per Center | Mirrors local model; no shared schema |
 | **Log ownership** | **TelemetryCenter owns the write path** | Other Centers subscribe via `IEventBus` only — never read Telemetry's DB |
 | **Log storage (local)** | Append-only table in Telemetry DB (Step 3–11) | Simple replay; same code path as outbox dispatcher |

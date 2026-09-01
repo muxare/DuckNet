@@ -2,6 +2,8 @@
 
 Live behavior is in [`claude-review.yml`](../.github/workflows/claude-review.yml), [`refactor-scan.yml`](../.github/workflows/refactor-scan.yml), and [`ci.yml`](../.github/workflows/ci.yml). This file is the backlog after the ReviewFlow MVP: what to do next, what to leave parked.
 
+CCA-F Scenario 5 expansion (test generation, `--bare`/retry, failed-CI diagnose) is specified in [`cca-f-ci-cd.md`](./cca-f-ci-cd.md) — implement that; do not treat it as live until a phase ships.
+
 ## Current policy
 
 - **Required to merge:** `ci.yml` (`build-and-test`). Tests decide.
@@ -44,7 +46,7 @@ Do these in DuckNet. Order is a suggestion, not a gate.
 ### E — On-demand depth
 
 - `/deep-review` command (`disable-model-invocation: true`) — Opus, more turns, still advisory. Do not pay Opus on every push.
-- `workflow_run` on **failed** `ci.yml` only: Claude reads logs and comments the likely cause.
+- `workflow_run` on **failed** `ci.yml` only: specified in [`cca-f-ci-cd.md`](./cca-f-ci-cd.md) Phase C.
 - Optional: `workflow_dispatch` on `claude-review.yml` with a PR number to re-run without pushing.
 
 ### F — Skill for triage
@@ -57,7 +59,7 @@ ReviewFlow-as-a-platform. Interesting elsewhere; not required for DuckNet.
 
 - C# orchestrator (`src/ReviewFlow`), `ICodeReviewPlatform`, adapters (Azure DevOps, GitLab, Bitbucket, local CLI)
 - YAML `review:` product config (per-reviewer `minimum-risk`, `max-total-budget`, `max-parallel-reviewers`)
-- Extra specialists: testing, performance, domain, docs, maintainability (beyond architecture/security/code)
+- Extra specialists: performance, domain, docs, maintainability (beyond architecture/security/code). **Testing** is specified in [`cca-f-ci-cd.md`](./cca-f-ci-cd.md) Phase B, not parked.
 - Confidence-based discard and a “human review” section (schema already allows `confidence`; aggregator ignores it)
 - ADO work items from findings (GitHub issues from the refactor scan are live)
 - Review memory across PRs (recurring problems, known exceptions)

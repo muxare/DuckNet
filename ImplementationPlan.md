@@ -947,7 +947,7 @@ ENTRYPOINT ["dotnet", "DuckNet.TelemetryCenter.dll"]
 | `deploy-center.yml` | Scoped automation; GHCR now; OIDC + Environment gate on Azure from 12c |
 | PostToolUse hook | Auto `dotnet format` after agent edits locally |
 
-Later / parked ReviewFlow and CI work lives in [docs/ci-policy.md](docs/ci-policy.md) — do not treat it as Step 0 scope.
+Later / parked ReviewFlow and CI work lives in [docs/ci-policy.md](docs/ci-policy.md) — do not treat it as Step 0 scope. CCA-F Scenario 5 expansion (test generation + diagnose) is [docs/cca-f-ci-cd.md](docs/cca-f-ci-cd.md).
 
 ### Interview / exam soundbite
 

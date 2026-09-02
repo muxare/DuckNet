@@ -2,6 +2,29 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-09-01 — Design rationale (architecture + Azure choices)
+
+### What changed
+Added [docs/design-rationale.md](./design-rationale.md): why the five rules and two-pipe (log vs bus) design exist, then each planned 12c Azure resource versus rejected alternatives. Linked from README, architecture index, azure-deployment, ImplementationPlan, and `infra/bicep/README.md`. No code change.
+
+### Architecture impact
+None — documentation of locked 12b/12c choices. Dual Event Hubs + Service Bus remains the teaching landing, not a claim that every four-service shop needs both.
+
+```mermaid
+flowchart LR
+  Rules[Five Center rules] --> Pipes[Log plus fan-out bus]
+  Pipes --> EH[Event Hubs]
+  Pipes --> SB[Service Bus]
+  Rules --> ACA[one Container App per Center]
+  Rules --> PG[Postgres database per Center]
+```
+
+### How to test
+Read [docs/design-rationale.md](./design-rationale.md). Docs-only / **untested**.
+
+### Follow-ups
+None. 12c still applies `dev`; this file does not change that.
+
 ## 2026-08-31 — Step 12b: Azure-ready IaC + adapters (no live deploy)
 
 ### What changed

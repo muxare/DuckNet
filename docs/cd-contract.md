@@ -6,7 +6,7 @@ Decisions this file assumes:
 
 - CD home = GitHub Actions — [decision record](./decisions/cd-github-actions-vs-azure-devops.md)
 - IaC = Bicep — [decision record](./decisions/iac-bicep-vs-pulumi.md)
-- Azure target = Option C in [azure-deployment.md](./azure-deployment.md) (Container Apps + Postgres per Center + Event Hubs + Service Bus)
+- Azure target = Option C in [azure-deployment.md](./azure-deployment.md) (Container Apps + Postgres per Center + Event Hubs + Service Bus). Why those products: [design-rationale.md](./design-rationale.md)
 
 ## Two identity planes (do not conflate)
 

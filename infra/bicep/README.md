@@ -1,6 +1,6 @@
 # Azure IaC (Step 12b)
 
-Checked-in Bicep is the source of truth ([decision](../../docs/decisions/iac-bicep-vs-pulumi.md)). **Compile here; apply in 12c.** No subscription is required for this step.
+Checked-in Bicep is the source of truth ([decision](../../docs/decisions/iac-bicep-vs-pulumi.md)). **Compile here; apply in 12c.** No subscription is required for this step. Why these resources and not the alternatives: [design rationale](../../docs/design-rationale.md).
 
 ```bash
 az bicep install

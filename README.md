@@ -223,6 +223,7 @@ infra/docker/                 # one image per Center
 
 ## Docs
 
+- [docs/design-rationale.md](./docs/design-rationale.md) — why the architecture and the planned Azure resources (vs alternatives)
 - [docs/architecture/](./docs/architecture/) — as-built architecture + execution diagrams per completed step
 - [docs/azure-deployment.md](./docs/azure-deployment.md) — learning notes: Azure options, 2018–2026 industry path, lab pricing (Bicep written in 12b, apply in 12c)
 - [docs/cd-contract.md](./docs/cd-contract.md) — GitHub → Azure identity planes, OIDC, pipeline map (Step 12a)

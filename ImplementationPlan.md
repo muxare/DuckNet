@@ -641,6 +641,8 @@ One story (same Centers, swap infra behind `IEventBus`) but **three mergeable un
 | **12b** Azure-ready | `step-12b` | Bicep + EventBus/Postgres adapters + workflows that **skip** Azure when OIDC vars are missing | $0 | No |
 | **12c** First environment | `step-12c` | Entra app + federated creds + `dev` RG apply + live Center revisions | Yes (deallocate between demos) | **Yes** — see [human prerequisites](./docs/cd-contract.md#human-prerequisites-block-12c-not-12a12b) |
 
+**Why this shape** (architecture rules + Azure resource vs alternatives): [docs/design-rationale.md](./docs/design-rationale.md).
+
 **Learning notes** (options, 2018–2026 path, lab pricing): [docs/azure-deployment.md](./docs/azure-deployment.md). That file is not the implementation spec.
 
 **CD spec** (OIDC, two identity planes, pipeline map): [docs/cd-contract.md](./docs/cd-contract.md).

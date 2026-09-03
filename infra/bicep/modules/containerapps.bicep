@@ -38,6 +38,11 @@ resource cae 'Microsoft.App/managedEnvironments@2025-01-01' = {
   }
 }
 
+// Shared ingress base URLs — defaultDomain avoids a circular dependency between apps.
+var telemetryUrl = 'https://ducknet-telemetry.${cae.properties.defaultDomain}'
+var alarmUrl = 'https://ducknet-alarm.${cae.properties.defaultDomain}'
+var billingUrl = 'https://ducknet-billing.${cae.properties.defaultDomain}'
+
 var apps = [
   {
     name: 'telemetry'
@@ -107,49 +112,76 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = [
               cpu: json('0.25')
               memory: '0.5Gi'
             }
-            env: [
-              {
-                name: 'ASPNETCORE_URLS'
-                value: 'http://+:8080'
-              }
-              {
-                name: 'AZURE_CLIENT_ID'
-                value: app.clientId
-              }
-              {
-                name: 'DUCKNET_ACR'
-                value: acrLoginServer
-              }
-              {
-                name: 'DUCKNET_SERVICEBUS_NAMESPACE'
-                value: serviceBusNamespace
-              }
-              {
-                name: 'DUCKNET_BUS_TOPIC'
-                value: serviceBusTopicName
-              }
-              {
-                name: 'DUCKNET_EVENTHUBS_NAMESPACE'
-                value: eventHubsNamespace
-              }
-              {
-                name: 'DUCKNET_EVENTHUBS_HUB'
-                value: eventHubsHubName
-              }
-              {
-                name: 'DUCKNET_KEYVAULT_URI'
-                value: keyVaultUri
-              }
-              {
-                name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-                secretRef: 'ai-connection'
-              }
-            ]
+            env: concat(
+              [
+                {
+                  name: 'ASPNETCORE_URLS'
+                  value: 'http://+:8080'
+                }
+                {
+                  name: 'AZURE_CLIENT_ID'
+                  value: app.clientId
+                }
+                {
+                  name: 'DUCKNET_ACR'
+                  value: acrLoginServer
+                }
+                {
+                  name: 'DUCKNET_SERVICEBUS_NAMESPACE'
+                  value: serviceBusNamespace
+                }
+                {
+                  name: 'DUCKNET_BUS_TOPIC'
+                  value: serviceBusTopicName
+                }
+                {
+                  name: 'DUCKNET_EVENTHUBS_NAMESPACE'
+                  value: eventHubsNamespace
+                }
+                {
+                  name: 'DUCKNET_EVENTHUBS_HUB'
+                  value: eventHubsHubName
+                }
+                {
+                  name: 'DUCKNET_KEYVAULT_URI'
+                  value: keyVaultUri
+                }
+                {
+                  name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+                  secretRef: 'ai-connection'
+                }
+              ],
+              app.name == 'alarm' || app.name == 'dashboard' || app.name == 'billing'
+                ? [
+                    {
+                      name: 'EVENT_LOG_URL'
+                      value: telemetryUrl
+                    }
+                  ]
+                : [],
+              app.name == 'dashboard'
+                ? [
+                    {
+                      name: 'UI_TELEMETRY_URL'
+                      value: telemetryUrl
+                    }
+                    {
+                      name: 'UI_ALARM_URL'
+                      value: alarmUrl
+                    }
+                    {
+                      name: 'UI_BILLING_URL'
+                      value: billingUrl
+                    }
+                  ]
+                : []
+            )
           }
         ]
         scale: {
           minReplicas: 1
-          maxReplicas: !empty(app.subscription) ? 8 : 1
+          // SQLite per replica — stay at 1 until Postgres wiring lands in app code.
+          maxReplicas: 1
           rules: !empty(app.subscription)
             ? [
                 {

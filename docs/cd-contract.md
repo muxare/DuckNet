@@ -2,6 +2,8 @@
 
 Spec for Steps 12b–12c. **12b as-built in workflows:** [`infra.yml`](../.github/workflows/infra.yml) compiles Bicep; [`deploy-center.yml`](../.github/workflows/deploy-center.yml) still pushes GHCR and **skips** the Azure job when OIDC vars are missing. Apply / `az containerapp update` wait for 12c bootstrap.
 
+**Step-by-step one-time deploy:** [azure-first-deploy.md](./azure-first-deploy.md) (bootstrap → Bicep apply → images; CD habits documented separately).
+
 Decisions this file assumes:
 
 - CD home = GitHub Actions — [decision record](./decisions/cd-github-actions-vs-azure-devops.md)

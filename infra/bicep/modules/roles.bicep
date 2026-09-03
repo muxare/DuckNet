@@ -14,10 +14,10 @@ var roles = {
   acrPush: '8311e382-0749-4cb8-b61a-304f252e45ec'
   keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
   keyVaultSecretsOfficer: 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
-  eventHubsDataSender: '2b629674-e913-4c5a-a23b-98fad2d50fb8'
-  eventHubsDataReceiver: 'a638d3c7-ab3a-456d-8c86-2d89dd191712'
-  serviceBusDataSender: '69a75ac1-6673-486f-a8d1-87dc2e89e890'
-  serviceBusDataReceiver: '4f6d3b9b-027b-4f4c-8842-2d005c82dd11'
+  eventHubsDataSender: '2b629674-e913-4c01-ae53-ef4638d8f975'
+  eventHubsDataReceiver: 'a638d3c7-ab3a-418d-83e6-5f17a39d4fde'
+  serviceBusDataSender: '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
+  serviceBusDataReceiver: '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
 }
 
 var centers = [

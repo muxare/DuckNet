@@ -2,7 +2,7 @@
 
 Toy domain, real distributed architecture. Smart rubber ducks emit `Squeaked` facts; autonomous Centers react without calling each other or sharing a database.
 
-Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 12b complete** — Azure-ready Bicep + adapters (no live deploy). Local demo is still Step 11 (Aspire + RabbitMQ). Next is [Step 12c (first Azure environment)](./ImplementationPlan.md#step-12c--first-azure-environment-live-deploy).
+Each step adds one distributed-systems idea and stays runnable end-to-end. Current: **Step 12b complete** — Azure-ready Bicep + adapters (no live deploy). Local demo is still Step 11 (Aspire + RabbitMQ). Next is [Step 12c (first Azure environment)](./ImplementationPlan.md#step-12c--first-azure-environment-live-deploy). One-time Azure bootstrap: [docs/azure-first-deploy.md](./docs/azure-first-deploy.md).
 
 ## Rules
 

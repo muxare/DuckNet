@@ -1,6 +1,10 @@
 # Azure deployment — learning notes
 
-Learning document, not as-built. DuckNet today runs on Aspire + SQLite + an HTTP event log (system of record) + RabbitMQ behind `IEventBus` (live fan-out). **12b wrote** [`infra/bicep/`](../infra/bicep/) and Azure adapters; they are **not applied** (no subscription, no live env). Phase D in [ImplementationPlan.md](../ImplementationPlan.md) is split: **12a** CD/identity contract, **12b** Bicep + adapters (this code), **12c** first live environment. This file explains **how** a system like this maps to Azure, **what** is industry-standard in 2026 given the Aspire inner loop, **how** that standard moved since 2018, and **what it costs** as a lab. The pipeline/OIDC spec is [cd-contract.md](./cd-contract.md), not this file.
+Learning document, not as-built. DuckNet today runs on Aspire + SQLite + an HTTP event log (system of record) + RabbitMQ behind `IEventBus` (live fan-out). **12b wrote** [`infra/bicep/`](../infra/bicep/) and Azure adapters; they are **not applied** (no subscription, no live env). Phase D in [ImplementationPlan.md](../ImplementationPlan.md) is split: **12a** CD/identity contract, **12b** Bicep + adapters (this code), **12c** first live environment.
+
+**Operational runbook (one-time deploy, CD later):** [azure-first-deploy.md](./azure-first-deploy.md).
+
+This file explains **how** a system like this maps to Azure, **what** is industry-standard in 2026 given the Aspire inner loop, **how** that standard moved since 2018, and **what it costs** as a lab. The pipeline/OIDC spec is [cd-contract.md](./cd-contract.md), not this file.
 
 **Why** the Centers architecture exists, and **why** each planned Azure resource was picked over the alternatives: [design-rationale.md](./design-rationale.md).
 

@@ -61,6 +61,7 @@ public static class DashboardApp
         builder.Services.AddSingleton(inbox);
         builder.Services.AddSingleton(offsets);
         builder.Services.AddSingleton(readModel);
+        builder.Services.AddSingleton(new CommerceReadModel());
         builder.Services.AddSingleton(new DeadLetterStore());
         builder.Services.AddSingleton(inner);
         builder.Services.AddSingleton<IEventBus>(duplicator);
@@ -112,6 +113,21 @@ public static class DashboardApp
         app.MapGet("/dashboard/duck/{id}", (string id, KernelDb kernelDb, DashboardReadModel model) =>
         {
             var rows = kernelDb.Read(conn => model.List(conn, id));
+            return Results.Json(rows);
+        });
+        app.MapGet("/dashboard/fleet", (KernelDb kernelDb, CommerceReadModel commerce) =>
+        {
+            var rows = kernelDb.Read(conn => commerce.ListFleet(conn));
+            return Results.Json(rows);
+        });
+        app.MapGet("/dashboard/service-cases", (KernelDb kernelDb, CommerceReadModel commerce) =>
+        {
+            var rows = kernelDb.Read(conn => commerce.ListServiceCases(conn));
+            return Results.Json(rows);
+        });
+        app.MapGet("/dashboard/orders", (KernelDb kernelDb, CommerceReadModel commerce) =>
+        {
+            var rows = kernelDb.Read(conn => commerce.ListOrders(conn));
             return Results.Json(rows);
         });
         app.MapPost("/dashboard/rebuild", async (DashboardConsumer consumer, CancellationToken ct) =>

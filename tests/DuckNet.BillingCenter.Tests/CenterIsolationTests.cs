@@ -55,6 +55,8 @@ public class CenterIsolationTests
         using var billing = KernelDb.OpenInMemory(CenterSchema.Billing);
 
         Assert.Contains("billing_sagas", billing.TableNames());
+        Assert.Contains("parts", billing.TableNames());
+        Assert.Contains("inventory", billing.TableNames());
         Assert.Contains("outbox", billing.TableNames());
         Assert.Contains("inbox", billing.TableNames());
         Assert.DoesNotContain("event_log", billing.TableNames());

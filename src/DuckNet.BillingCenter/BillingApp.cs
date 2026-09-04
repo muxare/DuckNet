@@ -31,12 +31,13 @@ public static class BillingApp
         }
 
         var db = KernelDb.Open(opts.DatabasePath, CenterSchema.Billing);
+        db.Write((conn, tx) => CatalogSeed.Ensure(conn, tx));
         var inbox = new Inbox(BillingConsumer.ConsumerGroup, enabled: true, db);
         var offsets = new ConsumerOffsetStore(db, BillingConsumer.ConsumerGroup);
         var outbox = new OutboxStore();
         var sagaTimeout = opts.SagaTimeout ?? TimeSpan.FromMinutes(5);
         var timeoutPoll = opts.TimeoutPollInterval ?? TimeSpan.FromMilliseconds(500);
-        var sagas = new BillingStore(outbox, opts.FeeAmountCents, sagaTimeout);
+        var sagas = new BillingStore(outbox, opts.FeeAmountCents, sagaTimeout, new CatalogStore(), new InventoryStore());
         var lastSeq = db.Read(conn => sagas.LoadAlarmSeq(conn));
         var sequencer = new PerKeySequencer(lastSeq);
         var time = TimeProvider.System;
@@ -60,6 +61,7 @@ public static class BillingApp
         builder.Services.AddSingleton(offsets);
         builder.Services.AddSingleton(outbox);
         builder.Services.AddSingleton(sagas);
+        builder.Services.AddSingleton(new CatalogStore());
         builder.Services.AddSingleton(time);
         builder.Services.AddSingleton(new DeadLetterStore());
         builder.Services.AddSingleton(inner);
@@ -107,8 +109,41 @@ public static class BillingApp
         app.MapGet("/health", () => Results.Ok(new { status = "ok", center = "billing" }));
         app.MapGet("/sagas", (KernelDb kernelDb, BillingStore store) =>
         {
-            var rows = kernelDb.Read(conn => store.List(conn));
+            var rows = kernelDb.Read(conn => store.List(conn).Select(row => ToCase(store, conn, row)).ToList());
             return Results.Json(rows);
+        });
+        app.MapGet("/service-cases", (KernelDb kernelDb, BillingStore store) =>
+        {
+            var rows = kernelDb.Read(conn => store.List(conn).Select(row => ToCase(store, conn, row)).ToList());
+            return Results.Json(rows);
+        });
+        app.MapGet("/catalog/parts", (KernelDb kernelDb, CatalogStore catalog) =>
+        {
+            var rows = kernelDb.Read(conn => catalog.ListParts(conn));
+            return Results.Json(rows);
+        });
+        app.MapGet("/catalog/fitment/{assetId}", (string assetId, KernelDb kernelDb, CatalogStore catalog) =>
+        {
+            var lines = kernelDb.Read(conn => catalog.FitmentForAsset(conn, assetId));
+            return Results.Json(lines);
+        });
+        app.MapPost("/service-cases/{alarmId:guid}/accept", (Guid alarmId, KernelDb kernelDb, BillingStore store) =>
+        {
+            using var activity = DuckNetTracing.StartProducer(DuckNetTracing.Billing, "accept.service-case", alarmId.ToString());
+            var traceId = DuckNetTracing.CurrentOrNewTraceParent();
+            var ok = kernelDb.Write((conn, tx) => store.TryAccept(conn, tx, alarmId, traceId));
+            return ok
+                ? Results.Ok(new { alarmId, status = "confirmed" })
+                : Results.Conflict(new { alarmId, status = "not-reservable" });
+        });
+        app.MapPost("/service-cases/{alarmId:guid}/decline", (Guid alarmId, KernelDb kernelDb, BillingStore store) =>
+        {
+            using var activity = DuckNetTracing.StartProducer(DuckNetTracing.Billing, "decline.service-case", alarmId.ToString());
+            var traceId = DuckNetTracing.CurrentOrNewTraceParent();
+            var ok = kernelDb.Write((conn, tx) => store.TryDecline(conn, tx, alarmId, traceId));
+            return ok
+                ? Results.Ok(new { alarmId, status = "declined" })
+                : Results.NotFound();
         });
         app.MapGet("/dlq", (KernelDb kernelDb, DeadLetterStore dlq) =>
         {
@@ -160,6 +195,9 @@ public static class BillingApp
 
         return app;
     }
+
+    private static ServiceCaseDto ToCase(BillingStore store, Microsoft.Data.Sqlite.SqliteConnection conn, BillingSagaRow row) =>
+        new(row.AlarmId, row.DuckId, row.State, row.AmountCents, row.ReservedAt, row.ExpiresAt, store.ListLines(conn, row.AlarmId));
 
     private static string EnsureTrailingSlash(string url) =>
         url.EndsWith('/') ? url : url + "/";
@@ -222,3 +260,12 @@ public sealed record BillingOptions(
             ? parsed
             : fallback;
 }
+
+public sealed record ServiceCaseDto(
+    Guid AlarmId,
+    string AssetId,
+    string State,
+    int AmountCents,
+    DateTimeOffset ReservedAt,
+    DateTimeOffset ExpiresAt,
+    IReadOnlyList<DuckNet.Contracts.PartLine> Lines);

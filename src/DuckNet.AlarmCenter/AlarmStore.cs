@@ -170,6 +170,120 @@ public sealed class AlarmStore
         return rows;
     }
 
+    public AlarmTransition TryScore(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        EventEnvelope envelope,
+        SensorReadingReported reading)
+    {
+        var previousVibration = ReadPreviousVibration(connection, tx, reading.AssetId);
+        var scored = HealthScorer.Score(reading, previousVibration);
+        UpsertHealth(connection, tx, reading, scored);
+        var predicted = new AssetHealthPredicted(
+            reading.AssetId,
+            scored.Score,
+            scored.PredictedFailureAt,
+            scored.RecommendedService,
+            reading.VibrationMmS,
+            reading.TemperatureC,
+            reading.EngineHours);
+        _outbox.Insert(
+            connection,
+            tx,
+            AssetHealthPredictedEnvelope.Create(
+                predicted,
+                sequenceNumber: Math.Max(reading.SequenceNumber, 1),
+                causationId: envelope.EventId.ToString(),
+                traceId: envelope.TraceId));
+
+        var (active, lastAlarmSeq, lastAlarmEventId) = ReadState(connection, tx, reading.AssetId);
+        if (scored.Score >= HealthScorer.RaiseThreshold && !active)
+        {
+            var raised = new HealthAlertRaised(
+                reading.AssetId,
+                scored.Score,
+                scored.PredictedFailureAt,
+                scored.RecommendedService);
+            var seq = lastAlarmSeq + 1;
+            var raisedEnvelope = HealthAlertRaisedEnvelope.Create(
+                raised,
+                seq,
+                causationId: envelope.EventId.ToString(),
+                traceId: envelope.TraceId);
+            InsertAlarm(
+                connection,
+                tx,
+                new AlarmRaised(reading.AssetId, scored.Score, reading.OccurredAt),
+                raisedEnvelope.EventId);
+            WriteState(connection, tx, reading.AssetId, active: true, seq, raisedEnvelope.EventId.ToString());
+            _outbox.Insert(connection, tx, raisedEnvelope);
+            return AlarmTransition.Raised;
+        }
+
+        if (scored.Score < HealthScorer.ResolveThreshold && active)
+        {
+            PublishHealthResolved(
+                connection,
+                tx,
+                reading.AssetId,
+                lastAlarmSeq,
+                lastAlarmEventId,
+                resolvedAt: reading.OccurredAt,
+                traceId: envelope.TraceId);
+            return AlarmTransition.Resolved;
+        }
+
+        return AlarmTransition.None;
+    }
+
+    public IReadOnlyList<AssetHealthRow> ListHealth(SqliteConnection connection)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT asset_id, score, predicted_failure_at, recommended_service,
+                   vibration_mm_s, temperature_c, engine_hours, scored_at
+            FROM asset_health
+            ORDER BY asset_id
+            """;
+        var rows = new List<AssetHealthRow>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            rows.Add(new AssetHealthRow(
+                reader.GetString(0),
+                reader.GetDouble(1),
+                DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture),
+                reader.GetString(3),
+                reader.GetDouble(4),
+                reader.GetDouble(5),
+                reader.GetDouble(6),
+                DateTimeOffset.Parse(reader.GetString(7), CultureInfo.InvariantCulture)));
+        }
+
+        return rows;
+    }
+
+    private void PublishHealthResolved(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string assetId,
+        long lastAlarmSeq,
+        string? lastAlarmEventId,
+        DateTimeOffset resolvedAt,
+        string? traceId)
+    {
+        var alarmEventId = lastAlarmEventId ?? LatestAlarmEventId(connection, tx, assetId);
+        var seq = lastAlarmSeq + 1;
+        var resolved = new HealthAlertResolved(assetId, resolvedAt);
+        var envelope = HealthAlertResolvedEnvelope.Create(
+            resolved,
+            seq,
+            causationId: alarmEventId,
+            traceId: traceId);
+        WriteState(connection, tx, assetId, active: false, seq, alarmEventId);
+        _outbox.Insert(connection, tx, envelope);
+    }
+
     private void PublishResolved(
         SqliteConnection connection,
         SqliteTransaction tx,
@@ -189,6 +303,52 @@ public sealed class AlarmStore
             traceId: traceId);
         WriteState(connection, tx, duckId, active: false, seq, alarmEventId);
         _outbox.Insert(connection, tx, envelope);
+    }
+
+    private static double? ReadPreviousVibration(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string assetId)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "SELECT vibration_mm_s FROM asset_health WHERE asset_id = $id";
+        cmd.Parameters.AddWithValue("$id", assetId);
+        var value = cmd.ExecuteScalar();
+        return value is null or DBNull ? null : Convert.ToDouble(value, CultureInfo.InvariantCulture);
+    }
+
+    private static void UpsertHealth(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        SensorReadingReported reading,
+        HealthScore scored)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            INSERT INTO asset_health (
+              asset_id, score, predicted_failure_at, recommended_service,
+              vibration_mm_s, temperature_c, engine_hours, scored_at)
+            VALUES ($id, $s, $p, $r, $v, $t, $h, $at)
+            ON CONFLICT(asset_id) DO UPDATE SET
+              score = $s,
+              predicted_failure_at = $p,
+              recommended_service = $r,
+              vibration_mm_s = $v,
+              temperature_c = $t,
+              engine_hours = $h,
+              scored_at = $at
+            """;
+        cmd.Parameters.AddWithValue("$id", reading.AssetId);
+        cmd.Parameters.AddWithValue("$s", scored.Score);
+        cmd.Parameters.AddWithValue("$p", scored.PredictedFailureAt.ToString("O"));
+        cmd.Parameters.AddWithValue("$r", scored.RecommendedService);
+        cmd.Parameters.AddWithValue("$v", reading.VibrationMmS);
+        cmd.Parameters.AddWithValue("$t", reading.TemperatureC);
+        cmd.Parameters.AddWithValue("$h", reading.EngineHours);
+        cmd.Parameters.AddWithValue("$at", reading.OccurredAt.ToString("O"));
+        cmd.ExecuteNonQuery();
     }
 
     private static void InsertWindow(
@@ -351,3 +511,13 @@ public sealed record AlarmRow(
     DateTimeOffset WindowStart,
     DateTimeOffset RaisedAt,
     Guid EventId);
+
+public sealed record AssetHealthRow(
+    string AssetId,
+    double Score,
+    DateTimeOffset PredictedFailureAt,
+    string RecommendedService,
+    double VibrationMmS,
+    double TemperatureC,
+    double EngineHours,
+    DateTimeOffset ScoredAt);

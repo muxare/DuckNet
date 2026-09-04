@@ -52,6 +52,8 @@ public class CenterIsolationTests
 
         var dashboardTables = dashboard.TableNames();
         Assert.Contains("squeaks_by_duck_hour", dashboardTables);
+        Assert.Contains("asset_health_latest", dashboardTables);
+        Assert.Contains("confirmed_orders", dashboardTables);
         Assert.Contains("inbox", dashboardTables);
         Assert.Contains("consumer_offsets", dashboardTables);
         Assert.DoesNotContain("event_log", dashboardTables);

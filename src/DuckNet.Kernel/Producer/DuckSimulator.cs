@@ -3,7 +3,7 @@ using DuckNet.EventBus;
 
 namespace DuckNet.Kernel.Producer;
 
-public sealed class DuckSimulator
+public sealed class DuckSimulator : ITelemetrySimulator
 {
     public const int DefaultLoudWeight = 100;
 

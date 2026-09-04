@@ -100,6 +100,11 @@ public static class AlarmApp
             var rows = kernelDb.Read(conn => store.List(conn));
             return Results.Json(rows);
         });
+        app.MapGet("/predictions", (KernelDb kernelDb, AlarmStore store) =>
+        {
+            var rows = kernelDb.Read(conn => store.ListHealth(conn));
+            return Results.Json(rows);
+        });
         app.MapPost("/alarms/{duckId}/resolve", (string duckId, KernelDb kernelDb, AlarmStore store) =>
         {
             using var activity = DuckNetTracing.StartProducer(DuckNetTracing.Alarm, "resolve.alarm", duckId);

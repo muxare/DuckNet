@@ -124,6 +124,33 @@ public class BillingConsumerTests
             FeeReleasedEnvelope.Parse(EnvelopeJson.Deserialize(unpublished[1].PayloadJson)).Reason);
     }
 
+    [Fact]
+    public async Task HealthAlertRaised_reserves_parts_for_fitted_asset()
+    {
+        using var db = KernelDb.OpenInMemory(CenterSchema.Billing);
+        db.Write((conn, tx) => CatalogSeed.Ensure(conn, tx));
+        var outbox = new OutboxStore();
+        var store = new BillingStore(outbox, 100, TimeSpan.FromMinutes(5));
+        var bus = new InMemoryEventBus();
+        var consumer = CreateConsumer(bus, db, store);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = consumer.RunAsync(cts.Token);
+
+        var raised = HealthAlertRaisedEnvelope.Create(
+            new HealthAlertRaised("TRK-001", 0.8, DateTimeOffset.UtcNow.AddHours(40), "Replace drive-axle bearing kit"),
+            1) with
+        { LogOffset = 1 };
+        await bus.PublishAsync(raised, cts.Token);
+        await WaitUntilAsync(() => consumer.ReservedCount >= 1, cts.Token);
+
+        var types = db.Read(conn => outbox.Unpublished(conn, 10)
+            .Select(row => EnvelopeJson.Deserialize(row.PayloadJson).Type)
+            .ToList());
+        Assert.Contains("PartsReserved", types);
+        Assert.Equal("TRK-001", db.Read(conn => store.Get(conn, raised.EventId)!.DuckId));
+    }
+
     private static BillingConsumer CreateConsumer(
         IEventBus bus,
         KernelDb db,

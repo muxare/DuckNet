@@ -58,6 +58,7 @@ public sealed class DashboardReadModel
         cmd.Transaction = tx;
         cmd.CommandText = "DELETE FROM squeaks_by_duck_hour";
         cmd.ExecuteNonQuery();
+        new CommerceReadModel().Truncate(connection, tx);
     }
 
     public IReadOnlyList<SqueakHourRow> List(SqliteConnection connection, string? duckId = null)

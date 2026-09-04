@@ -16,6 +16,7 @@ public sealed class DashboardConsumer
     private readonly Inbox _inbox;
     private readonly ConsumerOffsetStore _offsets;
     private readonly DashboardReadModel _readModel;
+    private readonly CommerceReadModel _commerce;
     private readonly EventUpcasterPipeline _upcasters;
     private readonly RetryPipeline _retry;
     private readonly DeadLetterStore _deadLetters;
@@ -50,6 +51,7 @@ public sealed class DashboardConsumer
         _inbox = inbox;
         _offsets = offsets;
         _readModel = readModel;
+        _commerce = new CommerceReadModel();
         _feeder = feeder;
         _output = output ?? Console.Out;
         _upcasters = upcasters ?? EventUpcasterPipeline.Default;
@@ -139,7 +141,7 @@ public sealed class DashboardConsumer
 
     private void Handle(EventEnvelope envelope)
     {
-        if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal))
+        if (!IsProjected(envelope.Type))
         {
             AdvanceOffset(envelope.LogOffset);
             return;
@@ -148,7 +150,7 @@ public sealed class DashboardConsumer
         Interlocked.Increment(ref _attemptCount);
         using var activity = DuckNetTracing.StartFromEnvelope(
             DuckNetTracing.Dashboard,
-            "handle.Squeaked",
+            $"handle.{envelope.Type}",
             envelope,
             consumerGroup: ConsumerGroup);
         if (_handleDelay > TimeSpan.Zero)
@@ -196,7 +198,6 @@ public sealed class DashboardConsumer
     private void HandleCore(EventEnvelope envelope)
     {
         var current = _upcasters.Upcast(envelope);
-        var squeaked = SqueakedEnvelope.Parse(current);
         var applied = _db.Write((conn, tx) =>
         {
             if (envelope.LogOffset > 0)
@@ -209,7 +210,7 @@ public sealed class DashboardConsumer
                 return false;
             }
 
-            _readModel.ApplySqueak(conn, tx, squeaked.DuckId, squeaked.OccurredAt, squeaked.VolumeDb);
+            Apply(conn, tx, current);
             return true;
         });
 
@@ -249,4 +250,71 @@ public sealed class DashboardConsumer
 
         _db.Write((conn, tx) => _offsets.MarkProcessed(conn, tx, logOffset));
     }
+
+    private void Apply(Microsoft.Data.Sqlite.SqliteConnection conn, Microsoft.Data.Sqlite.SqliteTransaction tx, EventEnvelope current)
+    {
+        switch (current.Type)
+        {
+            case "Squeaked":
+                var squeaked = SqueakedEnvelope.Parse(current);
+                _readModel.ApplySqueak(conn, tx, squeaked.DuckId, squeaked.OccurredAt, squeaked.VolumeDb);
+                break;
+            case "SensorReadingReported":
+                var reading = SensorReadingReportedEnvelope.Parse(current);
+                _readModel.ApplySqueak(conn, tx, reading.AssetId, reading.OccurredAt, reading.VibrationMmS);
+                break;
+            case "AssetHealthPredicted":
+                _commerce.ApplyPredicted(conn, tx, AssetHealthPredictedEnvelope.Parse(current));
+                break;
+            case "PartsReserved":
+                var reserved = PartsReservedEnvelope.Parse(current);
+                _commerce.UpsertServiceCase(conn, tx, reserved.AlarmId, reserved.AssetId, "Reserved", reserved.TotalCents);
+                break;
+            case "FeeReserved":
+                var fee = FeeReservedEnvelope.Parse(current);
+                _commerce.UpsertServiceCase(conn, tx, fee.AlarmId, fee.DuckId, "Reserved", fee.AmountCents);
+                break;
+            case "PartsReleased":
+                var partsReleased = PartsReleasedEnvelope.Parse(current);
+                _commerce.SetState(conn, tx, partsReleased.AlarmId, partsReleased.Reason);
+                break;
+            case "FeeReleased":
+                var feeReleased = FeeReleasedEnvelope.Parse(current);
+                _commerce.SetState(conn, tx, feeReleased.AlarmId, feeReleased.Reason);
+                break;
+            case "HealthAlertResolved":
+                _ = HealthAlertResolvedEnvelope.Parse(current);
+                if (Guid.TryParse(current.CausationId, out var healthAlarmId))
+                {
+                    _commerce.SetState(conn, tx, healthAlarmId, "Resolved");
+                }
+
+                break;
+            case "AlarmResolved":
+                if (Guid.TryParse(current.CausationId, out var alarmId))
+                {
+                    _commerce.SetState(conn, tx, alarmId, "Resolved");
+                }
+
+                break;
+            case "OrderConfirmed":
+                _commerce.ApplyOrderConfirmed(conn, tx, OrderConfirmedEnvelope.Parse(current));
+                break;
+            case "HealthAlertRaised":
+                var health = HealthAlertRaisedEnvelope.Parse(current);
+                _commerce.UpsertServiceCase(conn, tx, current.EventId, health.AssetId, "Alerted", 0);
+                break;
+            case "AlarmRaised":
+                var alarm = AlarmRaisedEnvelope.Parse(current);
+                _commerce.UpsertServiceCase(conn, tx, current.EventId, alarm.DuckId, "Alerted", 0);
+                break;
+        }
+    }
+
+    private static bool IsProjected(string type) =>
+        type is "Squeaked" or "SensorReadingReported" or "AssetHealthPredicted"
+            or "HealthAlertRaised" or "HealthAlertResolved"
+            or "AlarmRaised" or "AlarmResolved"
+            or "PartsReserved" or "PartsReleased" or "OrderConfirmed"
+            or "FeeReserved" or "FeeReleased";
 }

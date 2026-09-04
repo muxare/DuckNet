@@ -209,10 +209,22 @@ public sealed class BillingConsumer
                 return (true, _sagas.TryReserve(conn, tx, envelope, raised, now), false, raised.DuckId);
             }
 
+            if (string.Equals(current.Type, "HealthAlertRaised", StringComparison.Ordinal))
+            {
+                var raised = HealthAlertRaisedEnvelope.Parse(current);
+                return (true, _sagas.TryReserve(conn, tx, envelope, raised, now), false, raised.AssetId);
+            }
+
             if (string.Equals(current.Type, "AlarmResolved", StringComparison.Ordinal))
             {
                 var resolved = AlarmResolvedEnvelope.Parse(current);
                 return (true, false, _sagas.TryRelease(conn, tx, envelope, resolved), resolved.DuckId);
+            }
+
+            if (string.Equals(current.Type, "HealthAlertResolved", StringComparison.Ordinal))
+            {
+                var resolved = HealthAlertResolvedEnvelope.Parse(current);
+                return (true, false, _sagas.TryRelease(conn, tx, envelope, resolved), resolved.AssetId);
             }
 
             return (true, false, false, envelope.PartitionKey);
@@ -266,5 +278,7 @@ public sealed class BillingConsumer
 
     private static bool IsAlarmEvent(string type) =>
         string.Equals(type, "AlarmRaised", StringComparison.Ordinal)
-        || string.Equals(type, "AlarmResolved", StringComparison.Ordinal);
+        || string.Equals(type, "AlarmResolved", StringComparison.Ordinal)
+        || string.Equals(type, "HealthAlertRaised", StringComparison.Ordinal)
+        || string.Equals(type, "HealthAlertResolved", StringComparison.Ordinal);
 }

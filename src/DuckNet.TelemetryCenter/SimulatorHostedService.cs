@@ -2,7 +2,7 @@ using DuckNet.Kernel.Producer;
 
 namespace DuckNet.TelemetryCenter;
 
-public sealed class SimulatorHostedService(DuckSimulator simulator) : BackgroundService
+public sealed class SimulatorHostedService(ITelemetrySimulator simulator) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

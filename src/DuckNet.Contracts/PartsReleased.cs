@@ -1,6 +1,6 @@
 namespace DuckNet.Contracts;
 
-public sealed record FeeReleased(
+public sealed record PartsReleased(
     Guid AlarmId,
     string Reason)
 {

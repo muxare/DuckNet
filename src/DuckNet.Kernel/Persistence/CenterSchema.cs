@@ -120,6 +120,17 @@ public static class CenterSchema
           raised_at TEXT NOT NULL,
           event_id TEXT NOT NULL UNIQUE
         );
+
+        CREATE TABLE IF NOT EXISTS asset_health (
+          asset_id TEXT PRIMARY KEY,
+          score REAL NOT NULL,
+          predicted_failure_at TEXT NOT NULL,
+          recommended_service TEXT NOT NULL,
+          vibration_mm_s REAL NOT NULL,
+          temperature_c REAL NOT NULL,
+          engine_hours REAL NOT NULL,
+          scored_at TEXT NOT NULL
+        );
         """ + DeadLetterQueue;
 
     public const string Dashboard = """
@@ -141,6 +152,33 @@ public static class CenterSchema
           count INTEGER NOT NULL,
           volume_db REAL,
           PRIMARY KEY (duck_id, hour_utc)
+        );
+
+        CREATE TABLE IF NOT EXISTS asset_health_latest (
+          asset_id TEXT PRIMARY KEY,
+          score REAL NOT NULL,
+          predicted_failure_at TEXT NOT NULL,
+          recommended_service TEXT NOT NULL,
+          vibration_mm_s REAL NOT NULL,
+          temperature_c REAL NOT NULL,
+          engine_hours REAL NOT NULL,
+          scored_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS service_cases_by_asset (
+          alarm_id TEXT PRIMARY KEY,
+          asset_id TEXT NOT NULL,
+          state TEXT NOT NULL,
+          total_cents INTEGER NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS confirmed_orders (
+          order_id TEXT PRIMARY KEY,
+          alarm_id TEXT NOT NULL,
+          asset_id TEXT NOT NULL,
+          total_cents INTEGER NOT NULL,
+          confirmed_at TEXT NOT NULL
         );
         """ + DeadLetterQueue;
 
@@ -179,6 +217,45 @@ public static class CenterSchema
           amount_cents INTEGER NOT NULL,
           reserved_at TEXT NOT NULL,
           expires_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS parts (
+          sku TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          unit_cents INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS equipment_assets (
+          asset_id TEXT PRIMARY KEY,
+          equipment_model TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS fitment (
+          equipment_model TEXT NOT NULL,
+          sku TEXT NOT NULL,
+          quantity INTEGER NOT NULL,
+          PRIMARY KEY (equipment_model, sku)
+        );
+
+        CREATE TABLE IF NOT EXISTS inventory (
+          sku TEXT PRIMARY KEY,
+          qty_on_hand INTEGER NOT NULL,
+          qty_reserved INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS inventory_holds (
+          alarm_id TEXT NOT NULL,
+          sku TEXT NOT NULL,
+          quantity INTEGER NOT NULL,
+          PRIMARY KEY (alarm_id, sku)
+        );
+
+        CREATE TABLE IF NOT EXISTS service_case_lines (
+          alarm_id TEXT NOT NULL,
+          sku TEXT NOT NULL,
+          quantity INTEGER NOT NULL,
+          unit_cents INTEGER NOT NULL,
+          PRIMARY KEY (alarm_id, sku)
         );
         """ + DeadLetterQueue;
 }

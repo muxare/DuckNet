@@ -34,14 +34,23 @@ public static class TelemetryApp
         var outbox = new OutboxStore();
         var log = new EventLogStore();
         var publisher = new TransactionalPublisher(db, state, outbox);
-        var simulator = new DuckSimulator(
-            publisher,
-            opts.DuckCount,
-            opts.Seed,
-            opts.MinDelayMs,
-            opts.MaxDelayMs,
-            opts.LoudDuckId,
-            activitySource: DuckNetTracing.Telemetry);
+        ITelemetrySimulator simulator = opts.FleetSimulator
+            ? new AssetFleetSimulator(
+                publisher,
+                opts.AssetCount,
+                opts.Seed,
+                opts.MinDelayMs,
+                opts.MaxDelayMs,
+                opts.DegradedAssetId,
+                activitySource: DuckNetTracing.Telemetry)
+            : new DuckSimulator(
+                publisher,
+                opts.DuckCount,
+                opts.Seed,
+                opts.MinDelayMs,
+                opts.MaxDelayMs,
+                opts.LoudDuckId,
+                activitySource: DuckNetTracing.Telemetry);
         var dispatcher = new OutboxDispatcher(db, outbox, log, DuckNetTracing.Telemetry);
 
         if (opts.InjectPoisonEvent)
@@ -53,7 +62,7 @@ public static class TelemetryApp
         builder.Services.AddSingleton(log);
         builder.Services.AddSingleton(publisher);
         builder.Services.AddSingleton(opts);
-        builder.Services.AddSingleton(simulator);
+        builder.Services.AddSingleton<ITelemetrySimulator>(simulator);
         builder.Services.AddSingleton(dispatcher);
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
@@ -100,6 +109,22 @@ public static class TelemetryApp
             await pub.PublishSqueakAsync(request.DuckId, request.VolumeDb ?? 60, ct);
             return Results.Accepted();
         });
+        app.MapPost("/ingest/reading", async (IngestReadingRequest request, TransactionalPublisher pub, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.AssetId))
+            {
+                return Results.BadRequest();
+            }
+
+            using var activity = DuckNetTracing.StartProducer(DuckNetTracing.Telemetry, "ingest.reading", request.AssetId);
+            await pub.PublishSensorReadingAsync(
+                request.AssetId,
+                request.EngineHours,
+                request.VibrationMmS,
+                request.TemperatureC,
+                ct);
+            return Results.Accepted();
+        });
         app.MapGet("/stats", (KernelDb kernelDb, EventLogStore eventLog) =>
         {
             var count = kernelDb.Read(conn => eventLog.Count(conn));
@@ -113,6 +138,12 @@ public static class TelemetryApp
 
 public sealed record IngestSqueakRequest(string DuckId, double? VolumeDb = null);
 
+public sealed record IngestReadingRequest(
+    string AssetId,
+    double EngineHours,
+    double VibrationMmS,
+    double TemperatureC);
+
 public sealed record TelemetryOptions(
     string DatabasePath,
     bool ResetDatabase,
@@ -123,7 +154,10 @@ public sealed record TelemetryOptions(
     int MaxDelayMs,
     string? Urls,
     bool InjectPoisonEvent = false,
-    string? LoudDuckId = null)
+    string? LoudDuckId = null,
+    bool FleetSimulator = false,
+    int AssetCount = 8,
+    string? DegradedAssetId = null)
 {
     public static TelemetryOptions FromConfiguration(string[] args)
     {
@@ -142,7 +176,12 @@ public sealed record TelemetryOptions(
             MaxDelayMs: ParseInt(config["SQUEAK_MAX_DELAY_MS"], 80),
             Urls: config["URLS"],
             InjectPoisonEvent: IsTrue(config["INJECT_POISON_EVENT"]),
-            LoudDuckId: string.IsNullOrWhiteSpace(config["LOUD_DUCK_ID"]) ? null : config["LOUD_DUCK_ID"]);
+            LoudDuckId: string.IsNullOrWhiteSpace(config["LOUD_DUCK_ID"]) ? null : config["LOUD_DUCK_ID"],
+            FleetSimulator: IsTrue(config["FLEET_SIMULATOR"]),
+            AssetCount: ParseInt(config["ASSET_COUNT"], 8),
+            DegradedAssetId: string.IsNullOrWhiteSpace(config["DEGRADED_ASSET_ID"])
+                ? AssetFleetSimulator.DefaultDegradedAssetId
+                : config["DEGRADED_ASSET_ID"]);
     }
 
     private static bool IsTrue(string? value) =>

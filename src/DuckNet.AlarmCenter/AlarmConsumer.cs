@@ -108,7 +108,8 @@ public sealed class AlarmConsumer
 
     private void HandleDispatched(EventEnvelope envelope)
     {
-        if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal))
+        if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal)
+            && !string.Equals(envelope.Type, "SensorReadingReported", StringComparison.Ordinal))
         {
             AdvanceOffset(envelope.LogOffset);
             return;
@@ -137,7 +138,7 @@ public sealed class AlarmConsumer
     {
         using var activity = DuckNetTracing.StartFromEnvelope(
             DuckNetTracing.Alarm,
-            "handle.Squeaked",
+            $"handle.{envelope.Type}",
             envelope,
             consumerGroup: ConsumerGroup);
 
@@ -186,8 +187,7 @@ public sealed class AlarmConsumer
     private void HandleReadyCore(EventEnvelope envelope)
     {
         var current = _upcasters.Upcast(envelope);
-        var squeaked = SqueakedEnvelope.Parse(current);
-        var (applied, transition) = _db.Write((conn, tx) =>
+        var (applied, transition, key) = _db.Write((conn, tx) =>
         {
             if (envelope.LogOffset > 0)
             {
@@ -196,12 +196,21 @@ public sealed class AlarmConsumer
 
             if (!_inbox.TryInsert(conn, tx, envelope.EventId))
             {
-                return (false, AlarmTransition.None);
+                return (false, AlarmTransition.None, envelope.PartitionKey);
             }
 
+            if (string.Equals(current.Type, "SensorReadingReported", StringComparison.Ordinal))
+            {
+                var reading = SensorReadingReportedEnvelope.Parse(current);
+                _alarms.MarkSqueakSeq(conn, tx, reading.AssetId, reading.SequenceNumber);
+                var next = _alarms.TryScore(conn, tx, envelope, reading);
+                return (true, next, reading.AssetId);
+            }
+
+            var squeaked = SqueakedEnvelope.Parse(current);
             _alarms.MarkSqueakSeq(conn, tx, squeaked.DuckId, squeaked.SequenceNumber);
-            var next = _alarms.TryRaise(conn, tx, envelope, squeaked);
-            return (true, next);
+            var raised = _alarms.TryRaise(conn, tx, envelope, squeaked);
+            return (true, raised, squeaked.DuckId);
         });
 
         if (!applied)
@@ -215,13 +224,13 @@ public sealed class AlarmConsumer
         {
             Interlocked.Increment(ref _raisedCount);
             _output.WriteLine(
-                $"AlarmRaised {squeaked.DuckId} after {HandledCount} unique squeaks (EventId={envelope.EventId})");
+                $"AlertRaised {key} after {HandledCount} unique events (EventId={envelope.EventId})");
         }
         else if (transition == AlarmTransition.Resolved)
         {
             Interlocked.Increment(ref _resolvedCount);
             _output.WriteLine(
-                $"AlarmResolved {squeaked.DuckId} after {HandledCount} unique squeaks (EventId={envelope.EventId})");
+                $"AlertResolved {key} after {HandledCount} unique events (EventId={envelope.EventId})");
         }
     }
 

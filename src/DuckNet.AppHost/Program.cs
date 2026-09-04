@@ -10,9 +10,11 @@ var telemetry = builder.AddProject<Projects.DuckNet_TelemetryCenter>("telemetry"
     .WithHttpHealthCheck("/health")
     .WithEnvironment("DUCKNET_DB", Path.Combine(dataDir, "telemetry.db"))
     .WithEnvironment("DUCK_COUNT", "5")
-    .WithEnvironment("SQUEAK_MIN_DELAY_MS", "2")
-    .WithEnvironment("SQUEAK_MAX_DELAY_MS", "6")
-    .WithEnvironment("LOUD_DUCK_ID", "duck-1")
+    .WithEnvironment("ASSET_COUNT", "8")
+    .WithEnvironment("FLEET_SIMULATOR", "true")
+    .WithEnvironment("DEGRADED_ASSET_ID", "TRK-001")
+    .WithEnvironment("SQUEAK_MIN_DELAY_MS", "40")
+    .WithEnvironment("SQUEAK_MAX_DELAY_MS", "120")
     .WithEnvironment("RUN_SIMULATOR", "true");
 
 var alarm = builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")

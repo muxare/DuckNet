@@ -46,7 +46,10 @@ public class PostgresProviderTests
         Assert.DoesNotContain("event_log", billing.TableNames());
         Assert.Contains("squeak_window", alarm.TableNames());
         Assert.Contains("squeaks_by_duck_hour", dashboard.TableNames());
+        Assert.Contains("asset_health_latest", dashboard.TableNames());
         Assert.Contains("billing_sagas", billing.TableNames());
+        Assert.Contains("parts", billing.TableNames());
+        Assert.Contains("asset_health", alarm.TableNames());
         Assert.Contains("dead_letter_queue", alarm.TableNames());
         Assert.Contains("dead_letter_queue", dashboard.TableNames());
         Assert.Contains("dead_letter_queue", billing.TableNames());

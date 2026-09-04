@@ -2,7 +2,40 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-09-04 — OrePart lab slice (clone, not the four lab gaps)
+
+### What changed
+Vertical slice toward OrePart Connect **without** first closing the four industry-mapping lab gaps. Seeded `AssetFleetSimulator` emits `SensorReadingReported`. AlarmCenter runs a documented health formula (`HealthScorer`) and publishes `AssetHealthPredicted` / `HealthAlertRaised`. BillingCenter owns catalog/fitment/inventory and planner commands `POST /service-cases/{id}/accept|decline` (local HTTP + outbox facts: `PartsReserved`, `OrderConfirmed`, `PartsReleased`). Dashboard projects fleet health, service cases, and orders. Duck `Squeaked` / `AlarmRaised` / `FeeReserved` path unchanged.
+
+**Not built:** CommandCenter + authn/tenancy, late-data/corrections, replay orchestration beyond existing rebuild, partitioned primary log.
+
+### Architecture impact
+```mermaid
+sequenceDiagram
+  participant Fleet as FleetSimulator
+  participant Tel as TelemetryCenter
+  participant Health as AlarmCenter
+  participant Comm as BillingCenter
+  participant Dash as DashboardCenter
+  Fleet->>Tel: SensorReadingReported
+  Tel->>Health: log tail
+  Health->>Comm: HealthAlertRaised
+  Comm->>Comm: parts hold
+  Note over Comm: POST accept is a command
+  Comm->>Dash: OrderConfirmed via log
+```
+
+### How to test
+- `dotnet test` (RabbitMQ Testcontainers still need Docker)
+- Aspire: `FLEET_SIMULATOR=true`; `GET` alarm `/predictions`, billing `/service-cases`, dashboard `/dashboard/fleet` and `/dashboard/orders`
+
+### Follow-ups
+**Next production-shaped OrePart increment:** store-and-forward (gap 2), then rebuild dual-run when the health formula changes (gap 3), then partitioned ingest if the fleet grows (gap 4). Auth/tenancy after the single-tenant demo is boring.
+
+**CCA-F:** a `ducknet-orepart-slice` skill could capture the health formula + catalog seed so agents do not re-invent SKUs. Wait until the slice is exercised in Aspire.
+
 ## 2026-09-01 — Design rationale (architecture + Azure choices)
+
 
 ### What changed
 Added [docs/design-rationale.md](./design-rationale.md): why the five rules and two-pipe (log vs bus) design exist, then each planned 12c Azure resource versus rejected alternatives. Linked from README, architecture index, azure-deployment, ImplementationPlan, and `infra/bicep/README.md`. No code change.

@@ -44,4 +44,32 @@ public sealed class TransactionalPublisher
 
         return Task.CompletedTask;
     }
+
+    public Task PublishSensorReadingAsync(
+        string assetId,
+        double engineHours,
+        double vibrationMmS,
+        double temperatureC,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(assetId);
+
+        _db.Write((conn, tx) =>
+        {
+            var sequence = _state.NextSequence(conn, tx, assetId);
+            var reading = new SensorReadingReported(
+                assetId,
+                sequence,
+                DateTimeOffset.UtcNow,
+                engineHours,
+                vibrationMmS,
+                temperatureC);
+            _outbox.Insert(conn, tx, SensorReadingReportedEnvelope.Create(
+                reading,
+                traceId: DuckNetTracing.CurrentOrNewTraceParent()));
+        });
+
+        return Task.CompletedTask;
+    }
 }

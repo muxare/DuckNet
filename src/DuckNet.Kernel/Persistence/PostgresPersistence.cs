@@ -16,8 +16,8 @@ public static class PostgresPersistence
         insert.Transaction = tx;
         insert.CommandText = """
             INSERT INTO event_log
-              (event_id, partition_key, "type", version, sequence_number, payload_json, occurred_at, trace_id, causation_id)
-            VALUES (@id, @key, @type, @ver, @seq, @payload, @at, @trace, @causation)
+              (event_id, partition_key, "type", version, sequence_number, payload_json, occurred_at, trace_id, causation_id, log_partition)
+            VALUES (@id, @key, @type, @ver, @seq, @payload, @at, @trace, @causation, @part)
             ON CONFLICT (event_id) DO NOTHING
             RETURNING "offset"
             """;
@@ -30,6 +30,7 @@ public static class PostgresPersistence
         insert.Parameters.AddWithValue("at", envelope.OccurredAt.ToString("O"));
         insert.Parameters.AddWithValue("trace", (object?)envelope.TraceId ?? DBNull.Value);
         insert.Parameters.AddWithValue("causation", (object?)envelope.CausationId ?? DBNull.Value);
+        insert.Parameters.AddWithValue("part", 0);
         var inserted = insert.ExecuteScalar();
         if (inserted is not null and not DBNull)
         {

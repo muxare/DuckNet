@@ -13,6 +13,8 @@ public sealed class BillingStore
     public const string StateExpired = "Expired";
     public const string StateConfirmed = "Confirmed";
     public const string StateDeclined = "Declined";
+    public const string StatePicked = "Picked";
+    public const string StateShipped = "Shipped";
 
     private readonly OutboxStore _outbox;
     private readonly int _amountCents;
@@ -136,6 +138,7 @@ public sealed class BillingStore
             lines,
             total,
             DateTimeOffset.UtcNow);
+        WriteOrderId(connection, tx, alarmId, confirmed.OrderId);
         _outbox.Insert(
             connection,
             tx,
@@ -166,6 +169,69 @@ public sealed class BillingStore
             FeeReleasedEnvelope.Create(
                 fee,
                 sequenceNumber: 2,
+                causationId: alarmId.ToString(),
+                traceId: traceId));
+        return true;
+    }
+
+    public bool TryReviseBasket(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        Guid alarmId,
+        IReadOnlyList<PartLine> lines,
+        string? traceId)
+    {
+        var row = Get(connection, alarmId);
+        if (row is null || row.State != StateReserved || lines.Count == 0)
+        {
+            return false;
+        }
+
+        _inventory.ReleaseHolds(connection, tx, alarmId);
+        DeleteLines(connection, tx, alarmId);
+        if (!_inventory.TryReserve(connection, tx, alarmId, lines))
+        {
+            return false;
+        }
+
+        InsertLines(connection, tx, alarmId, lines);
+        var total = lines.Sum(l => l.Quantity * l.UnitCents);
+        UpdateAmount(connection, tx, alarmId, total);
+        var revised = new BasketRevised(alarmId, row.DuckId, lines, total);
+        _outbox.Insert(
+            connection,
+            tx,
+            BasketRevisedEnvelope.Create(
+                revised,
+                sequenceNumber: 4,
+                causationId: alarmId.ToString(),
+                traceId: traceId));
+        return true;
+    }
+
+    public bool TryPick(SqliteConnection connection, SqliteTransaction tx, Guid alarmId) =>
+        TrySetState(connection, tx, alarmId, StateConfirmed, StatePicked);
+
+    public bool TryShip(SqliteConnection connection, SqliteTransaction tx, Guid alarmId, string? traceId)
+    {
+        var row = Get(connection, alarmId);
+        if (row is null || row.State != StatePicked || row.OrderId is null)
+        {
+            return false;
+        }
+
+        if (!TrySetState(connection, tx, alarmId, StatePicked, StateShipped))
+        {
+            return false;
+        }
+
+        var dispatched = new ShipmentDispatched(row.OrderId.Value, alarmId, row.DuckId, DateTimeOffset.UtcNow);
+        _outbox.Insert(
+            connection,
+            tx,
+            ShipmentDispatchedEnvelope.Create(
+                dispatched,
+                sequenceNumber: 5,
                 causationId: alarmId.ToString(),
                 traceId: traceId));
         return true;
@@ -314,7 +380,7 @@ public sealed class BillingStore
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT alarm_id, duck_id, state, amount_cents, reserved_at, expires_at
+            SELECT alarm_id, duck_id, state, amount_cents, reserved_at, expires_at, order_id
             FROM billing_sagas
             ORDER BY reserved_at
             """;
@@ -332,7 +398,7 @@ public sealed class BillingStore
     {
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT alarm_id, duck_id, state, amount_cents, reserved_at, expires_at
+            SELECT alarm_id, duck_id, state, amount_cents, reserved_at, expires_at, order_id
             FROM billing_sagas
             WHERE alarm_id = $id
             """;
@@ -475,7 +541,7 @@ public sealed class BillingStore
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = """
-            SELECT alarm_id, duck_id, state, amount_cents, reserved_at, expires_at
+            SELECT alarm_id, duck_id, state, amount_cents, reserved_at, expires_at, order_id
             FROM billing_sagas
             WHERE state = $s
             """;
@@ -494,6 +560,32 @@ public sealed class BillingStore
         return rows;
     }
 
+    private static void WriteOrderId(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        Guid alarmId,
+        Guid orderId)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "UPDATE billing_sagas SET order_id = $o WHERE alarm_id = $id";
+        cmd.Parameters.AddWithValue("$o", orderId.ToString());
+        cmd.Parameters.AddWithValue("$id", alarmId.ToString());
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void DeleteLines(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        Guid alarmId)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = "DELETE FROM service_case_lines WHERE alarm_id = $id";
+        cmd.Parameters.AddWithValue("$id", alarmId.ToString());
+        cmd.ExecuteNonQuery();
+    }
+
     private static BillingSagaRow ReadRow(SqliteDataReader reader) =>
         new(
             Guid.Parse(reader.GetString(0)),
@@ -501,13 +593,15 @@ public sealed class BillingStore
             reader.GetString(2),
             (int)reader.GetInt64(3),
             DateTimeOffset.Parse(reader.GetString(4), CultureInfo.InvariantCulture),
-            DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture));
+            DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture),
+            reader.FieldCount > 6 && !reader.IsDBNull(6) ? Guid.Parse(reader.GetString(6)) : null);
 }
 
 public sealed record BillingSagaRow(
-    Guid AlarmId,
-    string DuckId,
-    string State,
-    int AmountCents,
-    DateTimeOffset ReservedAt,
-    DateTimeOffset ExpiresAt);
+        Guid AlarmId,
+        string DuckId,
+        string State,
+        int AmountCents,
+        DateTimeOffset ReservedAt,
+        DateTimeOffset ExpiresAt,
+        Guid? OrderId = null);

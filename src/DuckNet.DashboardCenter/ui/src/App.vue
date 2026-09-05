@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref } from "vue";
 import { hashFor, parseHash, type AppView, type Zoom } from "./hash";
 import DeveloperView from "./components/DeveloperView.vue";
 import ReadModelView from "./components/ReadModelView.vue";
+import FleetView from "./components/FleetView.vue";
 
 const view = ref<AppView>("developer");
 const zoom = ref<Zoom>({ kind: "overview" });
@@ -41,7 +42,7 @@ onUnmounted(() => {
       <span class="navbar-brand mb-0">
         <i class="bi bi-soundwave me-2"></i>DuckNet
         <span class="fw-normal text-white-50 fs-6 ms-1">
-          {{ view === "developer" ? "developer" : "read model" }}
+          {{ view === "developer" ? "developer" : view === "fleet" ? "fleet" : "read model" }}
         </span>
       </span>
       <div class="btn-group btn-group-sm" role="group" aria-label="View">
@@ -61,10 +62,19 @@ onUnmounted(() => {
         >
           Read model
         </button>
+        <button
+          type="button"
+          class="btn"
+          :class="view === 'fleet' ? 'btn-warning' : 'btn-outline-warning'"
+          @click="go('fleet')"
+        >
+          Fleet
+        </button>
       </div>
     </div>
   </nav>
 
   <DeveloperView v-if="view === 'developer'" :zoom="zoom" @zoom="go('developer', $event)" />
+  <FleetView v-else-if="view === 'fleet'" />
   <ReadModelView v-else />
 </template>

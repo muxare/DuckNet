@@ -1,6 +1,6 @@
 import type { CenterId } from "./system-map";
 
-export type AppView = "developer" | "read-model";
+export type AppView = "developer" | "read-model" | "fleet";
 
 export type Zoom =
   | { kind: "overview" }
@@ -11,6 +11,9 @@ const centerIds: CenterId[] = ["telemetry", "alarm", "dashboard", "billing", "bu
 
 export function parseHash(hash: string): { view: AppView; zoom: Zoom } {
   const raw = hash.replace(/^#/, "").replace(/^\//, "");
+  if (raw === "fleet" || raw.startsWith("fleet/")) {
+    return { view: "fleet", zoom: { kind: "overview" } };
+  }
   if (raw === "read-model" || raw.startsWith("read-model/")) {
     return { view: "read-model", zoom: { kind: "overview" } };
   }
@@ -27,6 +30,9 @@ export function parseHash(hash: string): { view: AppView; zoom: Zoom } {
 export function hashFor(view: AppView, zoom: Zoom = { kind: "overview" }): string {
   if (view === "read-model") {
     return "#read-model";
+  }
+  if (view === "fleet") {
+    return "#fleet";
   }
   if (zoom.kind === "all") {
     return "#developer/all";

@@ -1,3 +1,4 @@
+using DuckNet.Contracts;
 using DuckNet.EventBus;
 using DuckNet.Kernel;
 using DuckNet.Kernel.Consumer;
@@ -35,7 +36,7 @@ public static class AlarmApp
         var inbox = new Inbox(AlarmConsumer.ConsumerGroup, enabled: true, db);
         var offsets = new ConsumerOffsetStore(db, AlarmConsumer.ConsumerGroup);
         var outbox = new OutboxStore();
-        var alarms = new AlarmStore(outbox, opts.RateThreshold, opts.WindowSeconds);
+        var alarms = new AlarmStore(outbox, opts.RateThreshold, opts.WindowSeconds, opts.HealthModel, opts.HealthShadow);
         var lastSeq = db.Read(conn => alarms.LoadSqueakSeq(conn));
         var sequencer = new PerKeySequencer(lastSeq);
 
@@ -143,6 +144,8 @@ public static class AlarmApp
                 database = kernelDb.DataSource,
                 threshold = store.Threshold,
                 windowSeconds = store.WindowSeconds,
+                healthModel = store.HealthModel,
+                healthShadow = store.Shadow,
                 dlqCount,
                 raisedCount = consumer.RaisedCount,
                 resolvedCount = consumer.ResolvedCount,
@@ -177,7 +180,9 @@ public sealed record AlarmOptions(
     string? Urls,
     int ShardCount = PartitionShard.DefaultCount,
     int HandleDelayMs = 0,
-    int ShardCapacity = PartitionShard.DefaultCapacity)
+    int ShardCapacity = PartitionShard.DefaultCapacity,
+    string HealthModel = HealthModels.V1,
+    bool HealthShadow = false)
 {
     public static AlarmOptions FromConfiguration(string[] args)
     {
@@ -202,7 +207,12 @@ public sealed record AlarmOptions(
             Urls: config["URLS"],
             ShardCount: ParseInt(config["SHARD_COUNT"], PartitionShard.DefaultCount),
             HandleDelayMs: ParseInt(config["HANDLE_DELAY_MS"], 0),
-            ShardCapacity: ParseInt(config["SHARD_CAPACITY"], PartitionShard.DefaultCapacity));
+            ShardCapacity: ParseInt(config["SHARD_CAPACITY"], PartitionShard.DefaultCapacity),
+            HealthModel: string.Equals(config["HEALTH_MODEL"], "v2", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(config["HEALTH_MODEL"], HealthModels.V2, StringComparison.OrdinalIgnoreCase)
+                ? HealthModels.V2
+                : HealthModels.V1,
+            HealthShadow: IsTrue(config["HEALTH_SHADOW"]));
     }
 
     private static bool IsTrue(string? value) =>

@@ -2,6 +2,61 @@
 
 After each implementation: what changed, architecture (mermaid), how to test, and **follow-ups** (concerns, refactors, CCA-F proposals). Follow-ups wait for approval — do not implement them in the same pass.
 
+## 2026-09-05 — Aspire telemetry exit on pre-OrePart event_log
+
+### What changed
+`KernelDb.Open` applied `CREATE INDEX … (log_partition, offset)` before `ALTER TABLE` added the column. Leftover `AppHost/data/telemetry.db` (~3GB, Step 12b schema) threw `no such column: log_partition`; Telemetry **Finished**, other Centers stayed **Waiting**. Column add now runs first; partition index is created after that and skipped on huge existing files.
+
+### How to test
+- `dotnet test --filter FullyQualifiedName~EventLogMigration`
+- Restart `dotnet run --project src/DuckNet.AppHost`. Optional: delete `src/DuckNet.AppHost/data/*.db*` for a clean fleet demo.
+
+## 2026-09-04 — OrePart-2…5 lab gap approximations
+
+### What changed
+Closed the nine industry-mapping gaps as **lab approximations** on the existing four Centers (not `step-13`, not a product rename). Duck `Squeaked` / `AlarmRaised` / `FeeReserved` path stayed green (`dotnet test`).
+
+- **orepart-2:** `EdgeBuffer` + uplink outage flush; `SensorReadingCorrected`; Dashboard hour buckets keyed by device `OccurredAt` with `hour_closed_at` reopen; Alarm re-scores on correction (bypasses sequencer).
+- **orepart-3:** `AssetHealthPredicted` v2 `ModelVersion`; `HealthScorer` v2 shadow (`HEALTH_SHADOW`); Dashboard `asset_health_shadow` + `POST /dashboard/cutover`. Rebuild still truncates (Step 5 path).
+- **orepart-4:** Billing publishes `PartCatalogPublished` / `FitmentChanged`; `POST .../basket|pick|ship`; Vue `#fleet` commands Billing from the **browser**.
+- **orepart-5:** `event_log.log_partition` + batch ingest; `X-DuckNet-Tenant`; Telemetry NDJSON `GET /bus/export`. Unknown tenant rejected before append.
+
+As-builts: [orepart-2.md](./architecture/orepart-2.md) … [orepart-5.md](./architecture/orepart-5.md).
+
+### Architecture impact
+```mermaid
+flowchart TB
+  subgraph o2 [orepart-2]
+    Edge[edge_buffer] --> Log[event_log]
+    Corr[SensorReadingCorrected] --> Health[Alarm re-score]
+    Corr --> Hour[Dashboard device hour]
+  end
+  subgraph o3 [orepart-3]
+    V1[HealthScorer v1 live] --> Pred[AssetHealthPredicted]
+    V2[v2 shadow] --> Pred
+    Cut[POST /dashboard/cutover]
+  end
+  subgraph o4 [orepart-4]
+    Cat[catalog facts] --> Dash[Dashboard names]
+    UI["#fleet browser"] --> Bill[Billing commands]
+  end
+  subgraph o5 [orepart-5]
+    Part[log_partition]
+    Ten[X-DuckNet-Tenant]
+    Exp[GET /bus/export]
+  end
+  o2 --> o3 --> o4 --> o5
+```
+
+### How to test
+- `dotnet test` — green on this pass (Kernel 73, Alarm 22, Billing 22, Dashboard 28, EventBus 19)
+- Aspire: `FLEET_SIMULATOR=true`; `#fleet`; `POST /ingest/uplink/down` then `/up`; `HEALTH_SHADOW=true`. This pass did **not** click Accept in the browser — AppHost DCP came up (RabbitMQ container) but Center processes never bound; `#fleet` accept still needs a human `/run-aspire` pass.
+
+### Follow-ups
+**CCA-F (propose, do not add until approved):** `.claude/skills/ducknet-orepart-slice/SKILL.md` — health formula constants (`HealthScorer` v1/v2 weights), catalog SKUs from `CatalogSeed`, uplink mis-demo flags (`UPLINK_OUTAGE_SECONDS`, `/ingest/uplink/down`), tenant header name, `HEALTH_MODEL` / `HEALTH_SHADOW`. Frontmatter: `description` that fires when an agent is about to invent a new SKU or health weight; `allowed-tools` read-only on contracts + Billing catalog seed; `argument-hint` slice id. Wait until `#fleet` has been exercised in Aspire.
+
+**Refactor (not done):** `POST /dashboard/rebuild?to=` still ignores `to` for side tables; dual-run is health-shadow only. Per-partition `LogOffset` was skipped so Step 3 checkpoints keep working.
+
 ## 2026-09-04 — OrePart lab slice (clone, not the four lab gaps)
 
 ### What changed

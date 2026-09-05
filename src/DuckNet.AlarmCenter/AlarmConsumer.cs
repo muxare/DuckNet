@@ -109,13 +109,20 @@ public sealed class AlarmConsumer
     private void HandleDispatched(EventEnvelope envelope)
     {
         if (!string.Equals(envelope.Type, "Squeaked", StringComparison.Ordinal)
-            && !string.Equals(envelope.Type, "SensorReadingReported", StringComparison.Ordinal))
+            && !string.Equals(envelope.Type, "SensorReadingReported", StringComparison.Ordinal)
+            && !string.Equals(envelope.Type, "SensorReadingCorrected", StringComparison.Ordinal))
         {
             AdvanceOffset(envelope.LogOffset);
             return;
         }
 
         Interlocked.Increment(ref _attemptCount);
+        if (string.Equals(envelope.Type, "SensorReadingCorrected", StringComparison.Ordinal))
+        {
+            HandleReady(envelope);
+            return;
+        }
+
         foreach (var ready in Release(envelope))
         {
             HandleReady(ready);
@@ -197,6 +204,14 @@ public sealed class AlarmConsumer
             if (!_inbox.TryInsert(conn, tx, envelope.EventId))
             {
                 return (false, AlarmTransition.None, envelope.PartitionKey);
+            }
+
+            if (string.Equals(current.Type, "SensorReadingCorrected", StringComparison.Ordinal))
+            {
+                var corrected = SensorReadingCorrectedEnvelope.Parse(current);
+                _alarms.MarkSqueakSeq(conn, tx, corrected.AssetId, corrected.SequenceNumber);
+                var next = _alarms.TryCorrect(conn, tx, envelope, corrected);
+                return (true, next, corrected.AssetId);
             }
 
             if (string.Equals(current.Type, "SensorReadingReported", StringComparison.Ordinal))

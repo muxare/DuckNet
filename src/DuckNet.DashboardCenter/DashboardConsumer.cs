@@ -139,6 +139,11 @@ public sealed class DashboardConsumer
         }
     }
 
+    public void CutoverHealth(string toModel)
+    {
+        _db.Write((conn, tx) => _commerce.CutoverHealth(conn, tx, toModel));
+    }
+
     private void Handle(EventEnvelope envelope)
     {
         if (!IsProjected(envelope.Type))
@@ -262,6 +267,15 @@ public sealed class DashboardConsumer
             case "SensorReadingReported":
                 var reading = SensorReadingReportedEnvelope.Parse(current);
                 _readModel.ApplySqueak(conn, tx, reading.AssetId, reading.OccurredAt, reading.VibrationMmS);
+                _readModel.ApplyReading(
+                    conn, tx, current.EventId, reading.AssetId, reading.SequenceNumber, reading.OccurredAt, reading.VibrationMmS);
+                _commerce.ApplyTenant(conn, tx, reading.AssetId, reading.TenantId);
+                break;
+            case "SensorReadingCorrected":
+                var corrected = SensorReadingCorrectedEnvelope.Parse(current);
+                _readModel.ApplyCorrection(
+                    conn, tx, current.EventId, corrected.AssetId, corrected.SequenceNumber, corrected.OccurredAt, corrected.VibrationMmS);
+                _commerce.ApplyTenant(conn, tx, corrected.AssetId, corrected.TenantId);
                 break;
             case "AssetHealthPredicted":
                 _commerce.ApplyPredicted(conn, tx, AssetHealthPredictedEnvelope.Parse(current));
@@ -308,13 +322,28 @@ public sealed class DashboardConsumer
                 var alarm = AlarmRaisedEnvelope.Parse(current);
                 _commerce.UpsertServiceCase(conn, tx, current.EventId, alarm.DuckId, "Alerted", 0);
                 break;
+            case "PartCatalogPublished":
+                _commerce.ApplyCatalogPart(conn, tx, PartCatalogPublishedEnvelope.Parse(current));
+                break;
+            case "FitmentChanged":
+                _commerce.ApplyFitment(conn, tx, FitmentChangedEnvelope.Parse(current));
+                break;
+            case "BasketRevised":
+                var basket = BasketRevisedEnvelope.Parse(current);
+                _commerce.UpsertServiceCase(conn, tx, basket.AlarmId, basket.AssetId, "Reserved", basket.TotalCents);
+                break;
+            case "ShipmentDispatched":
+                var shipped = ShipmentDispatchedEnvelope.Parse(current);
+                _commerce.SetState(conn, tx, shipped.AlarmId, "Shipped");
+                break;
         }
     }
 
     private static bool IsProjected(string type) =>
-        type is "Squeaked" or "SensorReadingReported" or "AssetHealthPredicted"
+        type is "Squeaked" or "SensorReadingReported" or "SensorReadingCorrected" or "AssetHealthPredicted"
             or "HealthAlertRaised" or "HealthAlertResolved"
             or "AlarmRaised" or "AlarmResolved"
             or "PartsReserved" or "PartsReleased" or "OrderConfirmed"
-            or "FeeReserved" or "FeeReleased";
+            or "FeeReserved" or "FeeReleased"
+            or "PartCatalogPublished" or "FitmentChanged" or "BasketRevised" or "ShipmentDispatched";
 }

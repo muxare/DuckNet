@@ -18,19 +18,34 @@ public sealed class AlarmStore
     private readonly OutboxStore _outbox;
     private readonly int _threshold;
     private readonly int _windowSeconds;
+    private readonly string _healthModel;
+    private readonly bool _shadow;
 
-    public AlarmStore(OutboxStore outbox, int threshold, int windowSeconds)
+    public AlarmStore(
+        OutboxStore outbox,
+        int threshold,
+        int windowSeconds,
+        string? healthModel = null,
+        bool shadow = false)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(threshold, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(windowSeconds, 1);
         _outbox = outbox;
         _threshold = threshold;
         _windowSeconds = windowSeconds;
+        _healthModel = string.Equals(healthModel, HealthModels.V2, StringComparison.Ordinal)
+            ? HealthModels.V2
+            : HealthModels.V1;
+        _shadow = shadow;
     }
 
     public int Threshold => _threshold;
 
     public int WindowSeconds => _windowSeconds;
+
+    public string HealthModel => _healthModel;
+
+    public bool Shadow => _shadow;
 
     /// <summary>
     /// Step 4 DBs have no last_alarm_event_id. Add it nullable; new CREATE TABLE already includes it.
@@ -176,25 +191,58 @@ public sealed class AlarmStore
         EventEnvelope envelope,
         SensorReadingReported reading)
     {
-        var previousVibration = ReadPreviousVibration(connection, tx, reading.AssetId);
-        var scored = HealthScorer.Score(reading, previousVibration);
+        UpsertReading(connection, tx, envelope.EventId, reading);
+        return ScoreStored(connection, tx, envelope, reading);
+    }
+
+    public AlarmTransition TryCorrect(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        EventEnvelope envelope,
+        SensorReadingCorrected corrected)
+    {
+        var previous = ReadReading(connection, tx, corrected.AssetId, corrected.SequenceNumber);
+        if (previous is null)
+        {
+            return AlarmTransition.None;
+        }
+
+        var reading = new SensorReadingReported(
+            corrected.AssetId,
+            corrected.SequenceNumber,
+            corrected.OccurredAt,
+            corrected.EngineHours,
+            corrected.VibrationMmS,
+            corrected.TemperatureC,
+            corrected.TenantId);
+        UpsertReading(connection, tx, envelope.EventId, reading);
+        var latestSeq = ReadLatestSequence(connection, tx, corrected.AssetId);
+        if (latestSeq != corrected.SequenceNumber)
+        {
+            EmitPrediction(connection, tx, envelope, reading, HealthScorer.Score(reading, previous.VibrationMmS, _healthModel));
+            return AlarmTransition.None;
+        }
+
+        return ScoreStored(connection, tx, envelope, reading);
+    }
+
+    private AlarmTransition ScoreStored(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        EventEnvelope envelope,
+        SensorReadingReported reading)
+    {
+        var previousVibration = ReadPreviousVibration(connection, tx, reading.AssetId, reading.SequenceNumber);
+        var scored = HealthScorer.Score(reading, previousVibration, _healthModel);
         UpsertHealth(connection, tx, reading, scored);
-        var predicted = new AssetHealthPredicted(
-            reading.AssetId,
-            scored.Score,
-            scored.PredictedFailureAt,
-            scored.RecommendedService,
-            reading.VibrationMmS,
-            reading.TemperatureC,
-            reading.EngineHours);
-        _outbox.Insert(
-            connection,
-            tx,
-            AssetHealthPredictedEnvelope.Create(
-                predicted,
-                sequenceNumber: Math.Max(reading.SequenceNumber, 1),
-                causationId: envelope.EventId.ToString(),
-                traceId: envelope.TraceId));
+        EmitPrediction(connection, tx, envelope, reading, scored);
+
+        if (_shadow)
+        {
+            var other = _healthModel == HealthModels.V2 ? HealthModels.V1 : HealthModels.V2;
+            var shadow = HealthScorer.Score(reading, previousVibration, other);
+            EmitPrediction(connection, tx, envelope, reading, shadow);
+        }
 
         var (active, lastAlarmSeq, lastAlarmEventId) = ReadState(connection, tx, reading.AssetId);
         if (scored.Score >= HealthScorer.RaiseThreshold && !active)
@@ -234,6 +282,32 @@ public sealed class AlarmStore
         }
 
         return AlarmTransition.None;
+    }
+
+    private void EmitPrediction(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        EventEnvelope envelope,
+        SensorReadingReported reading,
+        HealthScore scored)
+    {
+        var predicted = new AssetHealthPredicted(
+            reading.AssetId,
+            scored.Score,
+            scored.PredictedFailureAt,
+            scored.RecommendedService,
+            reading.VibrationMmS,
+            reading.TemperatureC,
+            reading.EngineHours,
+            scored.ModelVersion);
+        _outbox.Insert(
+            connection,
+            tx,
+            AssetHealthPredictedEnvelope.Create(
+                predicted,
+                sequenceNumber: Math.Max(reading.SequenceNumber, 1),
+                causationId: envelope.EventId.ToString(),
+                traceId: envelope.TraceId));
     }
 
     public IReadOnlyList<AssetHealthRow> ListHealth(SqliteConnection connection)
@@ -305,15 +379,93 @@ public sealed class AlarmStore
         _outbox.Insert(connection, tx, envelope);
     }
 
-    private static double? ReadPreviousVibration(
+    private static void UpsertReading(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        Guid eventId,
+        SensorReadingReported reading)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            INSERT INTO asset_readings (
+              asset_id, sequence_number, event_id, engine_hours, vibration_mm_s, temperature_c, occurred_at)
+            VALUES ($id, $seq, $e, $h, $v, $t, $at)
+            ON CONFLICT(asset_id, sequence_number) DO UPDATE SET
+              event_id = $e,
+              engine_hours = $h,
+              vibration_mm_s = $v,
+              temperature_c = $t,
+              occurred_at = $at
+            """;
+        cmd.Parameters.AddWithValue("$id", reading.AssetId);
+        cmd.Parameters.AddWithValue("$seq", reading.SequenceNumber);
+        cmd.Parameters.AddWithValue("$e", eventId.ToString());
+        cmd.Parameters.AddWithValue("$h", reading.EngineHours);
+        cmd.Parameters.AddWithValue("$v", reading.VibrationMmS);
+        cmd.Parameters.AddWithValue("$t", reading.TemperatureC);
+        cmd.Parameters.AddWithValue("$at", reading.OccurredAt.ToString("O"));
+        cmd.ExecuteNonQuery();
+    }
+
+    private static SensorReadingReported? ReadReading(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string assetId,
+        long sequenceNumber)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            SELECT engine_hours, vibration_mm_s, temperature_c, occurred_at
+            FROM asset_readings
+            WHERE asset_id = $id AND sequence_number = $seq
+            """;
+        cmd.Parameters.AddWithValue("$id", assetId);
+        cmd.Parameters.AddWithValue("$seq", sequenceNumber);
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        return new SensorReadingReported(
+            assetId,
+            sequenceNumber,
+            DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture),
+            reader.GetDouble(0),
+            reader.GetDouble(1),
+            reader.GetDouble(2));
+    }
+
+    private static long ReadLatestSequence(
         SqliteConnection connection,
         SqliteTransaction tx,
         string assetId)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
-        cmd.CommandText = "SELECT vibration_mm_s FROM asset_health WHERE asset_id = $id";
+        cmd.CommandText = "SELECT COALESCE(MAX(sequence_number), 0) FROM asset_readings WHERE asset_id = $id";
         cmd.Parameters.AddWithValue("$id", assetId);
+        return (long)cmd.ExecuteScalar()!;
+    }
+
+    private static double? ReadPreviousVibration(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string assetId,
+        long sequenceNumber)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            SELECT vibration_mm_s FROM asset_readings
+            WHERE asset_id = $id AND sequence_number < $seq
+            ORDER BY sequence_number DESC
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("$id", assetId);
+        cmd.Parameters.AddWithValue("$seq", sequenceNumber);
         var value = cmd.ExecuteScalar();
         return value is null or DBNull ? null : Convert.ToDouble(value, CultureInfo.InvariantCulture);
     }

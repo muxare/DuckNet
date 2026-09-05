@@ -115,25 +115,48 @@ public static class DashboardApp
             var rows = kernelDb.Read(conn => model.List(conn, id));
             return Results.Json(rows);
         });
-        app.MapGet("/dashboard/fleet", (KernelDb kernelDb, CommerceReadModel commerce) =>
+        app.MapGet("/dashboard/fleet", (HttpRequest request, KernelDb kernelDb, CommerceReadModel commerce) =>
         {
-            var rows = kernelDb.Read(conn => commerce.ListFleet(conn));
+            var tenant = ReadTenant(request);
+            var rows = kernelDb.Read(conn => commerce.ListFleet(conn, tenant));
             return Results.Json(rows);
         });
-        app.MapGet("/dashboard/service-cases", (KernelDb kernelDb, CommerceReadModel commerce) =>
+        app.MapGet("/dashboard/service-cases", (HttpRequest request, KernelDb kernelDb, CommerceReadModel commerce) =>
         {
-            var rows = kernelDb.Read(conn => commerce.ListServiceCases(conn));
+            var tenant = ReadTenant(request);
+            var rows = kernelDb.Read(conn => commerce.ListServiceCases(conn, tenant));
             return Results.Json(rows);
         });
-        app.MapGet("/dashboard/orders", (KernelDb kernelDb, CommerceReadModel commerce) =>
+        app.MapGet("/dashboard/orders", (HttpRequest request, KernelDb kernelDb, CommerceReadModel commerce) =>
         {
-            var rows = kernelDb.Read(conn => commerce.ListOrders(conn));
+            var tenant = ReadTenant(request);
+            var rows = kernelDb.Read(conn => commerce.ListOrders(conn, tenant));
             return Results.Json(rows);
         });
-        app.MapPost("/dashboard/rebuild", async (DashboardConsumer consumer, CancellationToken ct) =>
+        app.MapGet("/dashboard/readings", (string? assetId, KernelDb kernelDb, DashboardReadModel model) =>
+        {
+            var rows = kernelDb.Read(conn => model.ListReadingHours(conn, assetId));
+            return Results.Json(rows);
+        });
+        app.MapGet("/dashboard/catalog", (KernelDb kernelDb, CommerceReadModel commerce) =>
+        {
+            var rows = kernelDb.Read(conn => commerce.ListCatalogParts(conn));
+            return Results.Json(rows);
+        });
+        app.MapPost("/dashboard/rebuild", async (string? to, DashboardConsumer consumer, CancellationToken ct) =>
         {
             await consumer.RebuildAsync(ct);
-            return Results.Accepted(value: new { status = "replaying" });
+            return Results.Accepted(value: new { status = "replaying", to });
+        });
+        app.MapPost("/dashboard/cutover", (string to, DashboardConsumer consumer) =>
+        {
+            if (string.IsNullOrWhiteSpace(to))
+            {
+                return Results.BadRequest();
+            }
+
+            consumer.CutoverHealth(to);
+            return Results.Ok(new { status = "cutover", to });
         });
         app.MapGet("/dlq", (KernelDb kernelDb, DeadLetterStore dlq) =>
         {
@@ -204,6 +227,11 @@ public static class DashboardApp
 
         return null;
     }
+
+    private static string? ReadTenant(HttpRequest request) =>
+        request.Headers.TryGetValue("X-DuckNet-Tenant", out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value.ToString()
+            : null;
 
     private static string EnsureTrailingSlash(string url) =>
         url.EndsWith('/') ? url : url + "/";

@@ -6,12 +6,39 @@ namespace DuckNet.Kernel.Persistence;
 
 public sealed class EventLogStore
 {
+    private readonly LogExportSink? _export;
+
+    public EventLogStore(int partitionCount = 1, LogExportSink? export = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(partitionCount, 1);
+        PartitionCount = partitionCount;
+        _export = export;
+    }
+
+    public int PartitionCount { get; }
+
     /// <summary>
-    /// Step 8 DBs have no trace columns. Add them nullable; new CREATE TABLE already includes them.
+    /// Step 8 DBs have no trace columns. OrePart DBs may lack <c>log_partition</c>.
+    /// Column adds run before the partition index — <c>CREATE INDEX</c> in the
+    /// schema string would fail on a pre-OrePart <c>event_log</c>.
     /// No-op when this Center does not own <c>event_log</c>.
     /// </summary>
     public static void EnsureTraceColumns(SqliteConnection connection)
     {
+        if (TableExists(connection, "billing_sagas"))
+        {
+            AddColumnIfMissing(connection, "billing_sagas", "order_id", "TEXT");
+        }
+
+        if (TableExists(connection, "equipment_assets"))
+        {
+            AddColumnIfMissing(
+                connection,
+                "equipment_assets",
+                "tenant_id",
+                "TEXT NOT NULL DEFAULT 'tenant-default'");
+        }
+
         if (!TableExists(connection, "event_log"))
         {
             return;
@@ -19,16 +46,22 @@ public sealed class EventLogStore
 
         AddColumnIfMissing(connection, "event_log", "trace_id", "TEXT");
         AddColumnIfMissing(connection, "event_log", "causation_id", "TEXT");
+        AddColumnIfMissing(connection, "event_log", "log_partition", "INTEGER NOT NULL DEFAULT 0");
+        EnsurePartitionIndex(connection);
     }
+
+    public int PartitionOf(string partitionKey) =>
+        DuckNet.Kernel.Consumer.PartitionShard.Assign(partitionKey, PartitionCount);
 
     public long Append(SqliteConnection connection, SqliteTransaction tx, EventEnvelope envelope)
     {
+        var partition = PartitionOf(envelope.PartitionKey);
         using var insert = connection.CreateCommand();
         insert.Transaction = tx;
         insert.CommandText = """
             INSERT OR IGNORE INTO event_log
-              (event_id, partition_key, type, version, sequence_number, payload_json, occurred_at, trace_id, causation_id)
-            VALUES ($id, $key, $type, $ver, $seq, $payload, $at, $trace, $causation)
+              (event_id, partition_key, type, version, sequence_number, payload_json, occurred_at, trace_id, causation_id, log_partition)
+            VALUES ($id, $key, $type, $ver, $seq, $payload, $at, $trace, $causation, $part)
             """;
         insert.Parameters.AddWithValue("$id", envelope.EventId.ToString());
         insert.Parameters.AddWithValue("$key", envelope.PartitionKey);
@@ -39,27 +72,61 @@ public sealed class EventLogStore
         insert.Parameters.AddWithValue("$at", envelope.OccurredAt.ToString("O"));
         insert.Parameters.AddWithValue("$trace", (object?)envelope.TraceId ?? DBNull.Value);
         insert.Parameters.AddWithValue("$causation", (object?)envelope.CausationId ?? DBNull.Value);
+        insert.Parameters.AddWithValue("$part", partition);
         insert.ExecuteNonQuery();
 
         using var select = connection.CreateCommand();
         select.Transaction = tx;
         select.CommandText = "SELECT offset FROM event_log WHERE event_id = $id";
         select.Parameters.AddWithValue("$id", envelope.EventId.ToString());
-        return (long)select.ExecuteScalar()!;
+        var offset = (long)select.ExecuteScalar()!;
+        var stamped = envelope with { LogOffset = offset };
+        _export?.Append(stamped);
+        return offset;
     }
 
-    public IReadOnlyList<EventEnvelope> ReadAfter(SqliteConnection connection, long offset, int limit)
+    public IReadOnlyList<long> AppendBatch(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        IReadOnlyList<EventEnvelope> envelopes)
+    {
+        var offsets = new List<long>(envelopes.Count);
+        foreach (var envelope in envelopes)
+        {
+            offsets.Add(Append(connection, tx, envelope));
+        }
+
+        return offsets;
+    }
+
+    public IReadOnlyList<EventEnvelope> ReadAfter(
+        SqliteConnection connection,
+        long offset,
+        int limit,
+        int? partition = null)
     {
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            SELECT offset, event_id, partition_key, type, version, sequence_number, payload_json, occurred_at, trace_id, causation_id
-            FROM event_log
-            WHERE offset > $offset
-            ORDER BY offset
-            LIMIT $limit
-            """;
+        cmd.CommandText = partition is null
+            ? """
+              SELECT offset, event_id, partition_key, type, version, sequence_number, payload_json, occurred_at, trace_id, causation_id
+              FROM event_log
+              WHERE offset > $offset
+              ORDER BY offset
+              LIMIT $limit
+              """
+            : """
+              SELECT offset, event_id, partition_key, type, version, sequence_number, payload_json, occurred_at, trace_id, causation_id
+              FROM event_log
+              WHERE offset > $offset AND log_partition = $part
+              ORDER BY offset
+              LIMIT $limit
+              """;
         cmd.Parameters.AddWithValue("$offset", offset);
         cmd.Parameters.AddWithValue("$limit", limit);
+        if (partition is not null)
+        {
+            cmd.Parameters.AddWithValue("$part", partition.Value);
+        }
 
         var rows = new List<EventEnvelope>();
         using var reader = cmd.ExecuteReader();
@@ -99,6 +166,30 @@ public sealed class EventLogStore
 
     private static string? ReadNullableString(SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+
+    /// <summary>
+    /// Skip the index on already-huge logs so Aspire Open does not stall
+    /// building a 3GB index. Partition filters still work via table scan.
+    /// </summary>
+    private static void EnsurePartitionIndex(SqliteConnection connection)
+    {
+        using (var pages = connection.CreateCommand())
+        {
+            pages.CommandText = "PRAGMA page_count";
+            var pageCount = Convert.ToInt64(pages.ExecuteScalar() ?? 0L);
+            if (pageCount > 32_768)
+            {
+                return;
+            }
+        }
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            CREATE INDEX IF NOT EXISTS event_log_partition_offset
+              ON event_log (log_partition, offset)
+            """;
+        cmd.ExecuteNonQuery();
+    }
 
     private static bool TableExists(SqliteConnection connection, string table)
     {

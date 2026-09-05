@@ -8,7 +8,10 @@ namespace DuckNet.EventBus;
 /// </summary>
 public sealed class EventUpcasterPipeline
 {
-    public static EventUpcasterPipeline Default { get; } = new(new SqueakedV1ToV2Upcaster());
+    public static EventUpcasterPipeline Default { get; } = new(
+        new SqueakedV1ToV2Upcaster(),
+        new SensorReadingReportedV1ToV2Upcaster(),
+        new AssetHealthPredictedV1ToV2Upcaster());
 
     private readonly IReadOnlyList<IEventUpcaster> _upcasters;
 

@@ -21,7 +21,17 @@ public static class HealthScorer
     public const double HorizonHoursAtZeroScore = 500.0;
     public const double TrendBonus = 0.10;
 
-    public static HealthScore Score(SensorReadingReported reading, double? previousVibrationMmS)
+    public const double V2VibrationWeight = 0.60;
+    public const double V2TemperatureWeight = 0.25;
+    public const double V2HoursWeight = 0.15;
+
+    public static HealthScore Score(SensorReadingReported reading, double? previousVibrationMmS) =>
+        Score(reading, previousVibrationMmS, HealthModels.V1);
+
+    public static HealthScore Score(
+        SensorReadingReported reading,
+        double? previousVibrationMmS,
+        string modelVersion)
     {
         var vibrationNorm = Clamp01(
             (reading.VibrationMmS - HealthyVibrationMmS) / (FailedVibrationMmS - HealthyVibrationMmS));
@@ -32,11 +42,23 @@ public static class HealthScorer
             ? TrendBonus
             : 0;
 
-        var score = Clamp01((0.45 * vibrationNorm) + (0.35 * tempNorm) + (0.20 * hoursNorm) + trend);
+        var (vw, tw, hw) = string.Equals(modelVersion, HealthModels.V2, StringComparison.Ordinal)
+            ? (V2VibrationWeight, V2TemperatureWeight, V2HoursWeight)
+            : (0.45, 0.35, 0.20);
+
+        var score = Clamp01((vw * vibrationNorm) + (tw * tempNorm) + (hw * hoursNorm) + trend);
         var hoursRemaining = (1.0 - score) * HorizonHoursAtZeroScore;
         var predictedFailureAt = reading.OccurredAt.AddHours(hoursRemaining);
         var recommended = Recommend(vibrationNorm, tempNorm, hoursNorm);
-        return new HealthScore(score, predictedFailureAt, recommended, vibrationNorm, tempNorm, hoursNorm, trend);
+        return new HealthScore(
+            score,
+            predictedFailureAt,
+            recommended,
+            vibrationNorm,
+            tempNorm,
+            hoursNorm,
+            trend,
+            string.IsNullOrWhiteSpace(modelVersion) ? HealthModels.V1 : modelVersion);
     }
 
     public static double Clamp01(double value) => Math.Clamp(value, 0, 1);
@@ -64,4 +86,5 @@ public sealed record HealthScore(
     double VibrationNorm,
     double TemperatureNorm,
     double HoursNorm,
-    double TrendBonus);
+    double TrendBonus,
+    string ModelVersion = HealthModels.V1);

@@ -20,12 +20,19 @@ public sealed class HttpLogClient
     public async Task<IReadOnlyList<EventEnvelope>> ReadAfterAsync(
         long offset,
         int limit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? partition = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
 
+        var url = $"bus/events?after={offset}&limit={limit}";
+        if (partition is not null)
+        {
+            url += $"&partition={partition.Value}";
+        }
+
         using var response = await _http
-            .GetAsync($"bus/events?after={offset}&limit={limit}", cancellationToken)
+            .GetAsync(url, cancellationToken)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
@@ -44,6 +51,18 @@ public sealed class HttpLogClient
             "application/json");
         using var response = await _http
             .PostAsync("bus/events", content, cancellationToken)
+            .ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task AppendBatchAsync(IReadOnlyList<EventEnvelope> envelopes, CancellationToken cancellationToken = default)
+    {
+        using var content = new StringContent(
+            JsonSerializer.Serialize(envelopes, EnvelopeJson.Options),
+            Encoding.UTF8,
+            "application/json");
+        using var response = await _http
+            .PostAsync("bus/events/batch", content, cancellationToken)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
     }

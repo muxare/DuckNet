@@ -14,12 +14,18 @@ public sealed class TransactionalPublisher
     private readonly KernelDb _db;
     private readonly StateStore _state;
     private readonly OutboxStore _outbox;
+    private readonly EdgeBufferStore? _edge;
 
-    public TransactionalPublisher(KernelDb db, StateStore state, OutboxStore outbox)
+    public TransactionalPublisher(
+        KernelDb db,
+        StateStore state,
+        OutboxStore outbox,
+        EdgeBufferStore? edge = null)
     {
         _db = db;
         _state = state;
         _outbox = outbox;
+        _edge = edge;
     }
 
     public Task PublishSqueakAsync(string duckId, CancellationToken cancellationToken = default) =>
@@ -50,6 +56,23 @@ public sealed class TransactionalPublisher
         double engineHours,
         double vibrationMmS,
         double temperatureC,
+        CancellationToken cancellationToken = default) =>
+        PublishSensorReadingAsync(
+            assetId,
+            engineHours,
+            vibrationMmS,
+            temperatureC,
+            occurredAt: null,
+            tenantId: OrePartTenants.Default,
+            cancellationToken);
+
+    public Task PublishSensorReadingAsync(
+        string assetId,
+        double engineHours,
+        double vibrationMmS,
+        double temperatureC,
+        DateTimeOffset? occurredAt,
+        string? tenantId = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -61,15 +84,38 @@ public sealed class TransactionalPublisher
             var reading = new SensorReadingReported(
                 assetId,
                 sequence,
-                DateTimeOffset.UtcNow,
+                occurredAt ?? DateTimeOffset.UtcNow,
                 engineHours,
                 vibrationMmS,
-                temperatureC);
-            _outbox.Insert(conn, tx, SensorReadingReportedEnvelope.Create(
+                temperatureC,
+                string.IsNullOrWhiteSpace(tenantId) ? OrePartTenants.Default : tenantId);
+            var envelope = SensorReadingReportedEnvelope.Create(
                 reading,
-                traceId: DuckNetTracing.CurrentOrNewTraceParent()));
+                traceId: DuckNetTracing.CurrentOrNewTraceParent());
+            if (_edge is not null)
+            {
+                _edge.Insert(conn, tx, envelope);
+            }
+            else
+            {
+                _outbox.Insert(conn, tx, envelope);
+            }
         });
 
+        return Task.CompletedTask;
+    }
+
+    public Task PublishCorrectionAsync(
+        SensorReadingCorrected corrected,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _db.Write((conn, tx) =>
+        {
+            _outbox.Insert(conn, tx, SensorReadingCorrectedEnvelope.Create(
+                corrected,
+                traceId: DuckNetTracing.CurrentOrNewTraceParent()));
+        });
         return Task.CompletedTask;
     }
 }

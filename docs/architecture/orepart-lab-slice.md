@@ -1,6 +1,6 @@
 # OrePart lab slice — as-built
 
-**Not a numbered DuckNet step.** This is a domain clone on the Step 12b machinery: a small seeded fleet, a transparent health model, and planner commands on BillingCenter. It does **not** close the four lab-roadmap gaps in [industry-mappings.md](../industry-mappings.md) (auth/tenancy CommandCenter, late-data/corrections, replay orchestration, partitioned primary log).
+**Not a numbered DuckNet step.** This is a domain clone on the Step 12b machinery: a small seeded fleet, a transparent health model, and planner commands on BillingCenter. Later lab slices close the industry-mapping gaps: [orepart-2](./orepart-2.md) (late data), [orepart-3](./orepart-3.md) (versioned health), [orepart-4](./orepart-4.md) (catalog + fulfilment UI), [orepart-5](./orepart-5.md) (partitions + tenant + export).
 
 **Punchline:** `TRK-001` degrades → `SensorReadingReported` → `AssetHealthPredicted` / `HealthAlertRaised` → parts hold → `POST /service-cases/{id}/accept` → `OrderConfirmed`, with `TraceId` / `CausationId` from reading to order.
 
@@ -12,15 +12,16 @@
 | **Changed** | Aspire Telemetry runs the fleet simulator (`FLEET_SIMULATOR=true`). AlarmCenter scores readings in addition to the squeak rate window. BillingCenter still handles `AlarmRaised` / `FeeReserved` for the duck path. |
 | **Unchanged** | No Center-to-Center business HTTP. No shared DB. Hostile transport after log read. Inbox, sequencer, outbox, DLQ, shards. Duck `Squeaked` contracts remain frozen. |
 
-## Deferred (gaps 2–4)
+## Later slices (gaps closed as lab approximations)
 
-Not in this slice, on purpose:
+This file stays the as-built for the first clone. Follow-on as-builts:
 
-- Event-time watermarks, late-data window reopen, correction/retraction events
-- Orchestrated replay / projection versioning / dual-run cutover (`POST /dashboard/rebuild` still exists)
-- Partitioned primary ingest log (TelemetryCenter remains the single HTTP writer)
+- [orepart-2.md](./orepart-2.md) — edge buffer, `SensorReadingCorrected`, event-time hour reopen
+- [orepart-3.md](./orepart-3.md) — `AssetHealthPredicted` v2 + shadow + cutover
+- [orepart-4.md](./orepart-4.md) — catalog facts, basket revise, pick/ship, Vue `#fleet`
+- [orepart-5.md](./orepart-5.md) — partitioned `event_log`, `X-DuckNet-Tenant`, NDJSON export
 
-Authn/tenancy (the rest of gap 1) is also out: accept/decline are unauthenticated local commands.
+Still not built (production, not lab): MQTT/OPC-UA, Influx/ClickHouse, a trained model, Entra ID, ERP, CMMS, warehouse returns, lakehouse, Azure Event Hubs (12c).
 
 ## Wire types
 

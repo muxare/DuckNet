@@ -31,10 +31,14 @@ public static class BillingApp
         }
 
         var db = KernelDb.Open(opts.DatabasePath, CenterSchema.Billing);
-        db.Write((conn, tx) => CatalogSeed.Ensure(conn, tx));
+        var outbox = new OutboxStore();
+        db.Write((conn, tx) =>
+        {
+            CatalogSeed.Ensure(conn, tx);
+            CatalogSeed.PublishFacts(conn, tx, outbox);
+        });
         var inbox = new Inbox(BillingConsumer.ConsumerGroup, enabled: true, db);
         var offsets = new ConsumerOffsetStore(db, BillingConsumer.ConsumerGroup);
-        var outbox = new OutboxStore();
         var sagaTimeout = opts.SagaTimeout ?? TimeSpan.FromMinutes(5);
         var timeoutPoll = opts.TimeoutPollInterval ?? TimeSpan.FromMilliseconds(500);
         var sagas = new BillingStore(outbox, opts.FeeAmountCents, sagaTimeout, new CatalogStore(), new InventoryStore());
@@ -112,9 +116,13 @@ public static class BillingApp
             var rows = kernelDb.Read(conn => store.List(conn).Select(row => ToCase(store, conn, row)).ToList());
             return Results.Json(rows);
         });
-        app.MapGet("/service-cases", (KernelDb kernelDb, BillingStore store) =>
+        app.MapGet("/service-cases", (HttpRequest request, KernelDb kernelDb, BillingStore store, CatalogStore catalog) =>
         {
-            var rows = kernelDb.Read(conn => store.List(conn).Select(row => ToCase(store, conn, row)).ToList());
+            var tenant = ReadTenant(request);
+            var rows = kernelDb.Read(conn => store.List(conn)
+                .Where(row => tenant is null || catalog.TenantForAsset(conn, row.DuckId) == tenant)
+                .Select(row => ToCase(store, conn, row))
+                .ToList());
             return Results.Json(rows);
         });
         app.MapGet("/catalog/parts", (KernelDb kernelDb, CatalogStore catalog) =>
@@ -144,6 +152,42 @@ public static class BillingApp
             return ok
                 ? Results.Ok(new { alarmId, status = "declined" })
                 : Results.NotFound();
+        });
+        app.MapPost("/service-cases/{alarmId:guid}/basket", (Guid alarmId, BasketPatchRequest body, KernelDb kernelDb, BillingStore store, CatalogStore catalog) =>
+        {
+            using var activity = DuckNetTracing.StartProducer(DuckNetTracing.Billing, "revise.basket", alarmId.ToString());
+            var traceId = DuckNetTracing.CurrentOrNewTraceParent();
+            var ok = kernelDb.Write((conn, tx) =>
+            {
+                var lines = new List<DuckNet.Contracts.PartLine>();
+                foreach (var line in body.Lines)
+                {
+                    var part = catalog.GetPart(conn, line.Sku);
+                    if (part is null || line.Quantity < 1)
+                    {
+                        return false;
+                    }
+
+                    lines.Add(new DuckNet.Contracts.PartLine(part.Sku, line.Quantity, part.UnitCents));
+                }
+
+                return store.TryReviseBasket(conn, tx, alarmId, lines, traceId);
+            });
+            return ok
+                ? Results.Ok(new { alarmId, status = "revised" })
+                : Results.Conflict(new { alarmId, status = "not-revisable" });
+        });
+        app.MapPost("/service-cases/{alarmId:guid}/pick", (Guid alarmId, KernelDb kernelDb, BillingStore store) =>
+        {
+            var ok = kernelDb.Write((conn, tx) => store.TryPick(conn, tx, alarmId));
+            return ok ? Results.Ok(new { alarmId, status = "picked" }) : Results.Conflict(new { alarmId, status = "not-pickable" });
+        });
+        app.MapPost("/service-cases/{alarmId:guid}/ship", (Guid alarmId, KernelDb kernelDb, BillingStore store) =>
+        {
+            using var activity = DuckNetTracing.StartProducer(DuckNetTracing.Billing, "ship.service-case", alarmId.ToString());
+            var traceId = DuckNetTracing.CurrentOrNewTraceParent();
+            var ok = kernelDb.Write((conn, tx) => store.TryShip(conn, tx, alarmId, traceId));
+            return ok ? Results.Ok(new { alarmId, status = "shipped" }) : Results.Conflict(new { alarmId, status = "not-shippable" });
         });
         app.MapGet("/dlq", (KernelDb kernelDb, DeadLetterStore dlq) =>
         {
@@ -198,6 +242,11 @@ public static class BillingApp
 
     private static ServiceCaseDto ToCase(BillingStore store, Microsoft.Data.Sqlite.SqliteConnection conn, BillingSagaRow row) =>
         new(row.AlarmId, row.DuckId, row.State, row.AmountCents, row.ReservedAt, row.ExpiresAt, store.ListLines(conn, row.AlarmId));
+
+    private static string? ReadTenant(HttpRequest request) =>
+        request.Headers.TryGetValue("X-DuckNet-Tenant", out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value.ToString()
+            : null;
 
     private static string EnsureTrailingSlash(string url) =>
         url.EndsWith('/') ? url : url + "/";
@@ -269,3 +318,7 @@ public sealed record ServiceCaseDto(
     DateTimeOffset ReservedAt,
     DateTimeOffset ExpiresAt,
     IReadOnlyList<DuckNet.Contracts.PartLine> Lines);
+
+public sealed record BasketPatchRequest(IReadOnlyList<BasketLineRequest> Lines);
+
+public sealed record BasketLineRequest(string Sku, int Quantity);

@@ -26,6 +26,27 @@ public static class SensorReadingReportedEnvelope
             CausationId: causationId);
     }
 
+    public static EventEnvelope CreateV1(
+        SensorReadingReportedV1 reading,
+        Guid? eventId = null,
+        string? traceId = null,
+        string? causationId = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reading.AssetId);
+        ArgumentOutOfRangeException.ThrowIfLessThan(reading.SequenceNumber, 1);
+
+        return new(
+            EventId: eventId ?? Guid.NewGuid(),
+            Type: "SensorReadingReported",
+            Version: SensorReadingReportedV1.Version,
+            PartitionKey: reading.AssetId,
+            SequenceNumber: reading.SequenceNumber,
+            OccurredAt: reading.OccurredAt,
+            PayloadJson: JsonSerializer.Serialize(reading, EnvelopeJson.Options),
+            TraceId: traceId,
+            CausationId: causationId);
+    }
+
     public static SensorReadingReported Parse(EventEnvelope envelope)
     {
         if (!string.Equals(envelope.Type, "SensorReadingReported", StringComparison.Ordinal))

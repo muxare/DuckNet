@@ -1,3 +1,6 @@
+using DuckNet.Contracts;
+using DuckNet.EventBus;
+using DuckNet.Kernel.Persistence;
 using DuckNet.Kernel.Producer;
 using Microsoft.Data.Sqlite;
 
@@ -15,7 +18,7 @@ public static class CatalogSeed
 
         foreach (var asset in AssetFleetSimulator.Catalog)
         {
-            InsertAsset(connection, tx, asset.AssetId, asset.EquipmentModel);
+            InsertAsset(connection, tx, asset.AssetId, asset.EquipmentModel, OrePartTenants.Default);
         }
 
         InsertFitment(connection, tx, "CAT-797", "BRG-797-KIT", 1);
@@ -29,6 +32,43 @@ public static class CatalogSeed
         InsertInventory(connection, tx, "BIT-D45", 12);
         InsertInventory(connection, tx, "FILTER-OIL-10", 8);
         InsertInventory(connection, tx, "BRG-HP400-KIT", 2);
+    }
+
+    public static void PublishFacts(SqliteConnection connection, SqliteTransaction tx, OutboxStore outbox)
+    {
+        var parts = new List<PartCatalogPublished>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT sku, name, unit_cents FROM parts ORDER BY sku";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                parts.Add(new PartCatalogPublished(reader.GetString(0), reader.GetString(1), (int)reader.GetInt64(2)));
+            }
+        }
+
+        var fitment = new List<FitmentChanged>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "SELECT equipment_model, sku, quantity FROM fitment ORDER BY equipment_model, sku";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                fitment.Add(new FitmentChanged(reader.GetString(0), reader.GetString(1), (int)reader.GetInt64(2)));
+            }
+        }
+
+        foreach (var part in parts)
+        {
+            outbox.Insert(connection, tx, PartCatalogPublishedEnvelope.Create(part));
+        }
+
+        foreach (var row in fitment)
+        {
+            outbox.Insert(connection, tx, FitmentChangedEnvelope.Create(row));
+        }
     }
 
     private static void InsertPart(
@@ -54,16 +94,18 @@ public static class CatalogSeed
         SqliteConnection connection,
         SqliteTransaction tx,
         string assetId,
-        string model)
+        string model,
+        string tenantId)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = """
-            INSERT OR IGNORE INTO equipment_assets (asset_id, equipment_model)
-            VALUES ($id, $m)
+            INSERT OR IGNORE INTO equipment_assets (asset_id, equipment_model, tenant_id)
+            VALUES ($id, $m, $t)
             """;
         cmd.Parameters.AddWithValue("$id", assetId);
         cmd.Parameters.AddWithValue("$m", model);
+        cmd.Parameters.AddWithValue("$t", tenantId);
         cmd.ExecuteNonQuery();
     }
 

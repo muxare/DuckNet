@@ -19,6 +19,25 @@ public sealed class CatalogStore
         return rows;
     }
 
+    public PartRow? GetPart(SqliteConnection connection, string sku)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT sku, name, unit_cents FROM parts WHERE sku = $s";
+        cmd.Parameters.AddWithValue("$s", sku);
+        using var reader = cmd.ExecuteReader();
+        return reader.Read()
+            ? new PartRow(reader.GetString(0), reader.GetString(1), (int)reader.GetInt64(2))
+            : null;
+    }
+
+    public string? TenantForAsset(SqliteConnection connection, string assetId)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT tenant_id FROM equipment_assets WHERE asset_id = $id";
+        cmd.Parameters.AddWithValue("$id", assetId);
+        return cmd.ExecuteScalar() as string;
+    }
+
     public string? ModelForAsset(SqliteConnection connection, string assetId)
     {
         using var cmd = connection.CreateCommand();

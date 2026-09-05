@@ -152,6 +152,55 @@ export async function postCenter(base: string, path: string, body?: unknown): Pr
   }
 }
 
+export function fetchFleet(): Promise<FleetHealthRow[]> {
+  return fetch("/dashboard/fleet").then((r) => readJson<FleetHealthRow[]>(r));
+}
+
+export function fetchServiceCases(): Promise<ServiceCaseRow[]> {
+  return fetch("/dashboard/service-cases").then((r) => readJson<ServiceCaseRow[]>(r));
+}
+
+export function fetchOrders(): Promise<ConfirmedOrderRow[]> {
+  return fetch("/dashboard/orders").then((r) => readJson<ConfirmedOrderRow[]>(r));
+}
+
+export function fetchCatalogParts(): Promise<CatalogPartRow[]> {
+  return fetch("/dashboard/catalog").then((r) => readJson<CatalogPartRow[]>(r));
+}
+
+export type FleetHealthRow = {
+  assetId: string;
+  score: number;
+  predictedFailureAt: string;
+  recommendedService: string;
+  vibrationMmS: number;
+  temperatureC: number;
+  engineHours: number;
+  scoredAt: string;
+};
+
+export type ServiceCaseRow = {
+  alarmId: string;
+  assetId: string;
+  state: string;
+  totalCents: number;
+  updatedAt: string;
+};
+
+export type ConfirmedOrderRow = {
+  orderId: string;
+  alarmId: string;
+  assetId: string;
+  totalCents: number;
+  confirmedAt: string;
+};
+
+export type CatalogPartRow = {
+  sku: string;
+  name: string;
+  unitCents: number;
+};
+
 export function fetchSummary(): Promise<DashboardSummary> {
   return fetch("/dashboard/summary").then((r) => readJson<DashboardSummary>(r));
 }

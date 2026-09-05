@@ -21,7 +21,11 @@ Target roadmap (all steps, high-level): [DuckNetArchitectureSteps.html](../../Du
 | 12a | [step-12a.md](./step-12a.md) | CD contract: GitHub Actions + OIDC; no Azure resources yet |
 | 12b | [step-12b.md](./step-12b.md) | Bicep + ServiceBusEventBus + Postgres provider; no live Azure |
 | lab | [orepart-lab-slice.md](./orepart-lab-slice.md) | OrePart clone: fleet telemetry → health score → parts hold → planner accept |
+| orep-2 | [orepart-2.md](./orepart-2.md) | Edge buffer + late data: device hour, `SensorReadingCorrected` |
+| orep-3 | [orepart-3.md](./orepart-3.md) | Versioned health + shadow + cutover |
+| orep-4 | [orepart-4.md](./orepart-4.md) | Catalog events, `#fleet` planner, pick/ship |
+| orep-5 | [orepart-5.md](./orepart-5.md) | Partitioned log, tenant header, NDJSON export |
 
-After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md). Current on `main`: Step 12a (CD contract). This branch: 12b (Bicep + adapters). Next: 12c (live Azure). Related lab clone (not a numbered step): [OrePart lab slice](./orepart-lab-slice.md).
+After each later step: add `step-N.md` here (architecture + execution Mermaid) per [CLAUDE.md](../../CLAUDE.md). Current on `main`: Step 12a (CD contract). This branch: 12b (Bicep + adapters). Next: 12c (live Azure). Related lab clone (not numbered steps): [OrePart lab slice](./orepart-lab-slice.md) then [orepart-2](./orepart-2.md) … [orepart-5](./orepart-5.md).
 
 Related (not as-built runtime): [Why DuckNet is shaped this way](../design-rationale.md) — architecture rules and Azure resource choices vs alternatives. [Azure first deploy](../azure-first-deploy.md) — one-time bootstrap, Bicep apply, image push (CD later). [Azure deployment — learning notes](../azure-deployment.md) — how this Aspire multi-Center shape maps to Azure, 2018–2026 industry path, lab pricing. [CD contract](../cd-contract.md) — identity planes, OIDC, pipeline map. [CI policy and ReviewFlow backlog](../ci-policy.md) — what runs on PRs vs later/nightly. [CCA-F Scenario 5 CI/CD expansion](../cca-f-ci-cd.md) — planned test generation and failed-CI diagnose; not live.

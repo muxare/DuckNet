@@ -12,6 +12,8 @@ var telemetry = builder.AddProject<Projects.DuckNet_TelemetryCenter>("telemetry"
     .WithEnvironment("DUCK_COUNT", "5")
     .WithEnvironment("ASSET_COUNT", "8")
     .WithEnvironment("FLEET_SIMULATOR", "true")
+    .WithEnvironment("LOG_PARTITION_COUNT", "4")
+    .WithEnvironment("TELEMETRY_TENANTS", "tenant-default,acme")
     .WithEnvironment("DEGRADED_ASSET_ID", "TRK-001")
     .WithEnvironment("SQUEAK_MIN_DELAY_MS", "40")
     .WithEnvironment("SQUEAK_MAX_DELAY_MS", "120")
@@ -27,6 +29,7 @@ var alarm = builder.AddProject<Projects.DuckNet_AlarmCenter>("alarm")
     .WithEnvironment("DUCKNET_BUS_EXCHANGE", "ducknet.events.alarm")
     .WithEnvironment("SHARD_COUNT", "3")
     .WithEnvironment("HANDLE_DELAY_MS", "12")
+    .WithEnvironment("HEALTH_SHADOW", "true")
     .WaitFor(rabbit)
     .WaitFor(telemetry);
 

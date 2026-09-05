@@ -28,8 +28,19 @@ public static class CenterSchema
           payload_json TEXT NOT NULL,
           occurred_at TEXT NOT NULL,
           trace_id TEXT,
-          causation_id TEXT
+          causation_id TEXT,
+          log_partition INTEGER NOT NULL DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS edge_buffer (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id TEXT NOT NULL UNIQUE,
+          payload_json TEXT NOT NULL,
+          flushed_at TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS edge_buffer_unflushed
+          ON edge_buffer (id) WHERE flushed_at IS NULL;
 
         CREATE TABLE IF NOT EXISTS outbox (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,6 +142,17 @@ public static class CenterSchema
           engine_hours REAL NOT NULL,
           scored_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS asset_readings (
+          asset_id TEXT NOT NULL,
+          sequence_number INTEGER NOT NULL,
+          event_id TEXT NOT NULL,
+          engine_hours REAL NOT NULL,
+          vibration_mm_s REAL NOT NULL,
+          temperature_c REAL NOT NULL,
+          occurred_at TEXT NOT NULL,
+          PRIMARY KEY (asset_id, sequence_number)
+        );
         """ + DeadLetterQueue;
 
     public const string Dashboard = """
@@ -180,6 +202,63 @@ public static class CenterSchema
           total_cents INTEGER NOT NULL,
           confirmed_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS readings_by_asset_hour (
+          asset_id TEXT NOT NULL,
+          hour_utc TEXT NOT NULL,
+          count INTEGER NOT NULL,
+          vibration_sum REAL NOT NULL,
+          hour_closed_at TEXT,
+          reopen_count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (asset_id, hour_utc)
+        );
+
+        CREATE TABLE IF NOT EXISTS reading_facts (
+          event_id TEXT PRIMARY KEY,
+          asset_id TEXT NOT NULL,
+          sequence_number INTEGER NOT NULL,
+          hour_utc TEXT NOT NULL,
+          vibration_mm_s REAL NOT NULL,
+          occurred_at TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS reading_facts_asset_seq
+          ON reading_facts (asset_id, sequence_number);
+
+        CREATE TABLE IF NOT EXISTS asset_health_shadow (
+          asset_id TEXT PRIMARY KEY,
+          score REAL NOT NULL,
+          predicted_failure_at TEXT NOT NULL,
+          recommended_service TEXT NOT NULL,
+          vibration_mm_s REAL NOT NULL,
+          temperature_c REAL NOT NULL,
+          engine_hours REAL NOT NULL,
+          scored_at TEXT NOT NULL,
+          model_version TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS projection_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS catalog_parts (
+          sku TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          unit_cents INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS catalog_fitment (
+          equipment_model TEXT NOT NULL,
+          sku TEXT NOT NULL,
+          quantity INTEGER NOT NULL,
+          PRIMARY KEY (equipment_model, sku)
+        );
+
+        CREATE TABLE IF NOT EXISTS asset_tenants (
+          asset_id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL
+        );
         """ + DeadLetterQueue;
 
     public const string Billing = """
@@ -216,7 +295,8 @@ public static class CenterSchema
           state TEXT NOT NULL,
           amount_cents INTEGER NOT NULL,
           reserved_at TEXT NOT NULL,
-          expires_at TEXT NOT NULL
+          expires_at TEXT NOT NULL,
+          order_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS parts (
@@ -227,7 +307,8 @@ public static class CenterSchema
 
         CREATE TABLE IF NOT EXISTS equipment_assets (
           asset_id TEXT PRIMARY KEY,
-          equipment_model TEXT NOT NULL
+          equipment_model TEXT NOT NULL,
+          tenant_id TEXT NOT NULL DEFAULT 'tenant-default'
         );
 
         CREATE TABLE IF NOT EXISTS fitment (

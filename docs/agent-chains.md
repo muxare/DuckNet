@@ -158,7 +158,11 @@ Cheap and frequent has a different failure budget than slow and consequential.
 ## Adding a chain
 
 1. Write the schema first. If you cannot describe the output as a document,
-   the task is not ready to be a chain.
+   the task is not ready to be a chain. Keep the `$schema` declaration in the
+   file for editors and for `validate-json.py`; `run-claude.sh` strips it on the
+   way to the CLI, whose `--json-schema` validator has no meta-schemas
+   registered and rejects any declaration it cannot resolve
+   (`no schema with key or ref "..."`) before the model ever runs.
 2. Write the prompt against that schema, with an explicit **Failure modes**
    section. Every prompt here ends with one.
 3. Write the manifest. Declare `on_missing_output` deliberately.

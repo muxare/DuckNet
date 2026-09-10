@@ -45,6 +45,35 @@ validate "$schemas/backlog-groom-verdicts.schema.json" "$ex/backlog-groom-verdic
   || fail "groom verdicts fixture"
 pass "fixtures satisfy their schemas"
 
+# --- run-claude.sh must not hand the CLI a "$schema" declaration ---
+# The CLI's --json-schema validator has no meta-schemas registered and does not
+# fetch them, so a schema carrying "$schema" is rejected before the model runs:
+#   --json-schema is not a valid JSON Schema: no schema with key or ref "..."
+# The files on disk keep the declaration; run-claude.sh strips it on the way out.
+mkdir -p "$tmp/stub"
+cat > "$tmp/stub/claude" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$STUB_ARGS"
+STUB
+chmod +x "$tmp/stub/claude"
+echo 'prompt' > "$tmp/stub-input.txt"
+STUB_ARGS="$tmp/stub-args.txt" PATH="$tmp/stub:$PATH" CLAUDE_CODE_OAUTH_TOKEN=stub \
+  bash "$scripts/run-claude.sh" \
+    --schema "$schemas/backlog-items.schema.json" \
+    --model stub-model --budget 0.01 \
+    --input "$tmp/stub-input.txt" --output "$tmp/stub-out.json" >/dev/null 2>&1 \
+  || fail "run-claude.sh did not run against the stub CLI"
+grep -q -- '--json-schema' "$tmp/stub-args.txt" || fail "run-claude.sh passed no --json-schema"
+if grep -q '"\$schema"' "$tmp/stub-args.txt"; then
+  fail 'run-claude.sh passed "$schema" to the CLI; it must be stripped'
+fi
+python3 - "$tmp/stub-args.txt" <<'CHECK' || fail "run-claude.sh passed a schema that does not parse"
+import json, sys
+args = open(sys.argv[1]).read().split("\n")
+json.loads(args[args.index("--json-schema") + 1])
+CHECK
+pass "run-claude.sh strips \$schema before the CLI sees it"
+
 # --- merge: join assessments into items by id ---
 bash "$scripts/merge-confidence.sh" "$ex/backlog-items.json" "$ex/backlog-verdicts.json" items id \
   > "$tmp/final.json"

@@ -49,10 +49,17 @@ if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
   echo "run-claude: CLAUDE_CODE_OAUTH_TOKEN not set; using the local CLI login" >&2
 fi
 
+# The CLI validates --json-schema with a validator that has no meta-schemas
+# registered and does not fetch them, so any "$schema" declaration is rejected
+# outright: `no schema with key or ref "https://json-schema.org/draft-07/schema#"`.
+# Keep the declaration in the files on disk -- editors and the jsonschema
+# validation in run-chain.py read it -- and strip it only on the way to the CLI.
+schema_json=$(jq -c 'del(."$schema")' "$schema")
+
 args=(
   -p
   --output-format json
-  --json-schema "$(cat "$schema")"
+  --json-schema "$schema_json"
   --permission-mode dontAsk
   --model "$model"
   --max-budget-usd "$budget"

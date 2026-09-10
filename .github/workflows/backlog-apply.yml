@@ -1,0 +1,160 @@
+name: Claude backlog apply
+
+# File a backlog plan that a previous "Claude backlog build" run produced.
+#
+# The plan is an artifact, not a re-run: this workflow never invokes Claude. The
+# model output a human approved is frozen — re-dispatching the build instead
+# would have produced different items from a fresh model session.
+#
+# What is *not* frozen is where those items land. Issue numbers, open/closed
+# state and issue bodies move between planning and approval, so the plan's
+# `number` fields and spliced bodies are stale by the time anyone clicks
+# approve. reconcile-backlog-plan.py re-derives them: it replays the (pure,
+# model-free) planner over the build-time issue dump to prove nothing frozen
+# moved, then re-runs it against the backlog as it is now. Same items, same
+# titles, same generated text; current destinations. Every move is reported in
+# the job summary.
+#
+# Two ways in:
+#   - called by backlog-build.yml with the run that just planned (the gate
+#     pauses that run until a reviewer approves);
+#   - dispatched by hand with any earlier build run's id, to file a plan that
+#     was left sitting, or to re-file one after a rejection.
+#
+# The `backlog-apply` GitHub Environment is the approval. It must carry required
+# reviewers — the first step refuses to run if it does not, because GitHub
+# silently creates an unprotected environment when a workflow names one that
+# does not exist, and an unprotected gate is worse than no gate.
+
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        description: 'Run ID of the backlog build whose plan to file.'
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Run ID of the "Claude backlog build" run whose plan to file.'
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: backlog-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: backlog-apply
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the approval gate is real
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # An environment named by a workflow but never configured is created
+          # on the fly with zero protection rules, so the job would have sailed
+          # past a gate that only looks like one. Read it back and say so.
+          if ! rules=$(gh api "repos/$REPO/environments/backlog-apply" \
+                --jq '[.protection_rules[].type] | join(",")' 2>/dev/null); then
+            echo "::warning::Could not read the backlog-apply environment; " \
+                 "cannot confirm a reviewer approved this. Continuing."
+            exit 0
+          fi
+          if [ -z "$rules" ]; then
+            echo "::error::The backlog-apply environment has no protection rules, " \
+                 "so nothing gated this job. Add required reviewers under " \
+                 "Settings -> Environments -> backlog-apply, then re-dispatch."
+            exit 1
+          fi
+          echo "Gate: $rules"
+
+      - name: Download the plan from run ${{ inputs.run_id }}
+        uses: actions/download-artifact@v4
+        with:
+          name: backlog-build
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: .
+
+      - name: Validate the approved plan
+        run: |
+          set -euo pipefail
+          for f in backlog-actions.json existing-issues.json plan-meta.json \
+                   backlog-build/backlog-final.json; do
+            test -f "$f" \
+              || { echo "::error::run ${{ inputs.run_id }} carries no $f"; exit 1; }
+          done
+          # The plan crossed a run boundary. Re-check it here rather than trust
+          # that the run which produced it validated the same bytes.
+          python3 .github/scripts/validate-json.py \
+            .github/schemas/backlog-actions.schema.json backlog-actions.json
+          mv backlog-actions.json approved-actions.json
+
+      - name: Dump the backlog as it is now
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const path = require('path');
+            const dump = require(path.join(
+              process.env.GITHUB_WORKSPACE,
+              '.github/scripts/dump-backlog-issues.js'
+            ));
+            await dump({ github, context, core }, 'issues-now.json');
+
+      - name: Re-resolve the approved plan against the backlog as it is now
+        run: |
+          set -euo pipefail
+          # Issue numbers, open/closed state and issue bodies all move between
+          # planning and approval. The approval fixes *what* gets filed; where
+          # it lands is re-derived here from current facts. Replaying the
+          # planner over the build-time dump first proves nothing frozen moved.
+          python3 .github/scripts/reconcile-backlog-plan.py \
+            --approved approved-actions.json \
+            --final backlog-build/backlog-final.json \
+            --was existing-issues.json \
+            --now issues-now.json \
+            --sha "$(jq -r '.sha' plan-meta.json)" \
+            --run-url "$(jq -r '.run_url' plan-meta.json)" \
+            --planned-at "$(jq -r '.planned_at // ""' plan-meta.json)" \
+            --drift-out drift.md \
+            > backlog-actions.json
+          python3 .github/scripts/validate-json.py \
+            .github/schemas/backlog-actions.schema.json backlog-actions.json
+          {
+            bash .github/scripts/format-backlog-actions.sh backlog-actions.json \
+              "$(jq -r '.run_url' plan-meta.json)"
+            cat drift.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backlog-apply
+          path: |
+            approved-actions.json
+            backlog-actions.json
+            issues-now.json
+            drift.md
+          if-no-files-found: warn
+
+      - name: Create or update backlog issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const path = require('path');
+            const apply = require(path.join(
+              process.env.GITHUB_WORKSPACE,
+              '.github/scripts/apply-backlog-issues.js'
+            ));
+            await apply({ github, context, core });

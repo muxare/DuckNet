@@ -5,6 +5,14 @@ name: Claude backlog build
 # anything is filed. Dispatch only: a backlog build is an occasional act, and
 # an unattended one against a twelve-step repo would file a lot at once.
 #
+# The build job never touches GitHub issues. It ends with a plan
+# (`backlog-actions.json`) uploaded as an artifact and rendered into the job
+# summary. The `apply` job below calls backlog-apply.yml, which pauses on the
+# `backlog-apply` environment until a reviewer approves, then files *that* plan.
+# The approval is therefore against the exact plan you read — not against a
+# fresh model session, which is what re-dispatching with `apply: true` used to
+# give you.
+#
 # Advisory. Not a merge gate, not on pull_request.
 
 on:
@@ -15,14 +23,15 @@ on:
         required: false
         default: ''
       apply:
-        description: 'Create and update GitHub issues. Leave false to inspect the plan first.'
+        description: 'Ask for approval to file the plan. False = plan only; file it later with "Claude backlog apply".'
         type: boolean
         required: false
-        default: false
+        default: true
 
 permissions:
   contents: read
   issues: write
+  actions: read
 
 concurrency:
   group: backlog-build
@@ -71,31 +80,12 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const { owner, repo } = context.repo;
-            const open = await github.paginate(github.rest.issues.listForRepo, {
-              owner, repo, state: 'open', per_page: 100,
-            });
-            const closed = await github.paginate(github.rest.issues.listForRepo, {
-              owner, repo, state: 'closed', labels: 'backlog-build', per_page: 100,
-            });
-            const seen = new Set();
-            const issues = [];
-            for (const issue of [...open, ...closed]) {
-              if (issue.pull_request || seen.has(issue.number)) continue;
-              seen.add(issue.number);
-              issues.push({
-                number: issue.number,
-                title: issue.title,
-                body: issue.body || '',
-                state: issue.state,
-                labels: (issue.labels || []).map((l) =>
-                  typeof l === 'string' ? l : l.name
-                ),
-              });
-            }
-            fs.writeFileSync('existing-issues.json', JSON.stringify(issues, null, 2));
-            core.info(`Dumped ${issues.length} issues for matching`);
+            const path = require('path');
+            const dump = require(path.join(
+              process.env.GITHUB_WORKSPACE,
+              '.github/scripts/dump-backlog-issues.js'
+            ));
+            await dump({ github, context, core }, 'existing-issues.json');
 
       - name: Plan issue create/update/skip
         env:
@@ -110,14 +100,18 @@ jobs:
           # rather than half-way through creating issues.
           python3 .github/scripts/validate-json.py \
             .github/schemas/backlog-actions.schema.json backlog-actions.json
+          # This is the text the approver reads before releasing the apply job.
+          bash .github/scripts/format-backlog-actions.sh backlog-actions.json "$RUN_URL" \
+            >> "$GITHUB_STEP_SUMMARY"
           jq '.summary, .dropped' backlog-actions.json
-          {
-            echo '### Issue plan'
-            echo
-            echo '```json'
-            jq '.summary' backlog-actions.json
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          # The apply job replays the planner against existing-issues.json to
+          # prove nothing frozen moved, so it needs the same sha and run URL
+          # that went into the bodies above.
+          jq -n --arg sha "$SHA" --arg run_url "$RUN_URL" \
+                --arg run_id "${{ github.run_id }}" \
+                --arg planned_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                '{sha: $sha, run_url: $run_url, run_id: $run_id, planned_at: $planned_at}' \
+            > plan-meta.json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -127,21 +121,29 @@ jobs:
             summary.md
             existing-issues.json
             backlog-actions.json
+            plan-meta.json
           if-no-files-found: error
 
-      - name: Create or update backlog issues
-        if: ${{ inputs.apply }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const path = require('path');
-            const apply = require(path.join(
-              process.env.GITHUB_WORKSPACE,
-              '.github/scripts/apply-backlog-issues.js'
-            ));
-            await apply({ github, context, core });
-
-      - name: Report dry run
-        if: ${{ !inputs.apply }}
+      - name: Point at the approval
         run: |
-          echo "::notice::Dry run — no issues touched. Download the backlog-build artifact, then re-dispatch with apply: true."
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            echo "::notice::Plan ready. The apply job is waiting on the " \
+                 "backlog-apply environment — review the summary above, then approve it."
+          else
+            echo "::notice::Plan only — no issues touched. To file it, dispatch " \
+                 "'Claude backlog apply' with run_id ${{ github.run_id }}."
+          fi
+
+  apply:
+    name: apply
+    needs: build
+    if: ${{ inputs.apply }}
+    # Same plan, same run. The called workflow pauses on the backlog-apply
+    # environment; nothing is written until a reviewer releases it.
+    uses: ./.github/workflows/backlog-apply.yml
+    with:
+      run_id: ${{ github.run_id }}
+    permissions:
+      contents: read
+      issues: write
+      actions: read

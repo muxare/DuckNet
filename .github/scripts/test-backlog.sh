@@ -156,6 +156,109 @@ grep -q "Not filed" "$tmp/build.md" || fail "build markdown: dropped section"
 grep -q "azure-first-environment" "$tmp/build.md" || fail "build markdown: item table"
 pass "build markdown"
 
+# --- reconcile: the approved plan is re-resolved against the backlog as it is now ---
+# The plan pins issue numbers at build time; approval happens later. These cover
+# what moves in that gap.
+reconcile() {
+  python3 "$scripts/reconcile-backlog-plan.py" \
+    --approved "$tmp/actions.json" --final "$tmp/final.json" \
+    --was "$ex/backlog-existing-issues.json" --now "$1" \
+    --sha abc1234deadbeef --run-url https://example.test/run/1 "${@:2}"
+}
+
+# nothing changed: the fresh plan is the approved plan, and the replay proves it
+reconcile "$ex/backlog-existing-issues.json" --drift-out "$tmp/drift-none.md" \
+  > "$tmp/fresh-none.json" 2>/dev/null || fail "reconcile: rejected an unchanged backlog"
+jq -es '.[0] == .[1]' "$tmp/actions.json" "$tmp/fresh-none.json" >/dev/null \
+  || fail "reconcile: an unchanged backlog produced a different plan"
+grep -q "Nothing moved" "$tmp/drift-none.md" || fail "reconcile: no-drift report"
+pass "reconcile reproduces the approved plan when nothing moved"
+
+# frozen input moved: refuse to file anything at all
+jq '.items[0].title = "Something the approver never saw"' "$tmp/final.json" \
+  > "$tmp/tampered-final.json"
+if python3 "$scripts/reconcile-backlog-plan.py" \
+     --approved "$tmp/actions.json" --final "$tmp/tampered-final.json" \
+     --was "$ex/backlog-existing-issues.json" --now "$ex/backlog-existing-issues.json" \
+     --sha abc1234deadbeef --run-url https://example.test/run/1 >/dev/null 2>&1; then
+  fail "reconcile: filed a plan whose frozen model output had changed"
+fi
+pass "reconcile refuses when the approved content moved"
+
+# the planner's own output moving counts as frozen input moving: a different
+# sha reaches the issue bodies, so the replay must not reproduce the approval
+if python3 "$scripts/reconcile-backlog-plan.py" \
+     --approved "$tmp/actions.json" --final "$tmp/final.json" \
+     --was "$ex/backlog-existing-issues.json" --now "$ex/backlog-existing-issues.json" \
+     --sha 9999999deadbeef --run-url https://example.test/run/1 >/dev/null 2>&1; then
+  fail "reconcile: filed a plan built from a different commit"
+fi
+pass "reconcile refuses when the commit behind the plan moved"
+
+# an issue closed between plan and approval: update becomes skip, never a write
+jq '[ .[] | if .number == 41 then .state = "closed" else . end ]' \
+  "$ex/backlog-existing-issues.json" > "$tmp/now-closed.json"
+reconcile "$tmp/now-closed.json" --drift-out "$tmp/drift-closed.md" \
+  > "$tmp/fresh-closed.json" 2>/dev/null || fail "reconcile: closed-issue case"
+jq -e '.actions[] | select(.key=="azure-bootstrap-identity") | .action == "skip"' \
+  "$tmp/fresh-closed.json" >/dev/null \
+  || fail "reconcile: still updates an issue closed since the plan was approved"
+grep -q "closed since the plan was approved" "$tmp/drift-closed.md" \
+  || fail "reconcile: closed-issue move not reported"
+pass "reconcile turns an update into a skip when the issue was closed"
+
+# a matching issue appeared between plan and approval: create becomes update
+jq --arg t "Stand up the first live Azure environment" \
+   '. + [{number: 77, title: $t, body: "Filed by a human on Tuesday.", state: "open", labels: []}]' \
+   "$ex/backlog-existing-issues.json" > "$tmp/now-new.json"
+reconcile "$tmp/now-new.json" --drift-out "$tmp/drift-new.md" \
+  > "$tmp/fresh-new.json" 2>/dev/null || fail "reconcile: new-issue case"
+jq -e '.actions[] | select(.key=="azure-first-environment")
+       | .action == "update" and .number == 77' "$tmp/fresh-new.json" >/dev/null \
+  || fail "reconcile: duplicated an issue that appeared since the plan was approved"
+jq -er '.actions[] | select(.key=="azure-first-environment") | .body' "$tmp/fresh-new.json" \
+  | grep -q "Filed by a human on Tuesday" \
+  || fail "reconcile: clobbered the body of the issue it adopted"
+grep -q "not duplicating it" "$tmp/drift-new.md" || fail "reconcile: new-issue move not reported"
+pass "reconcile turns a create into an update rather than duplicating"
+
+# a human edited a matched issue between plan and approval: their text survives
+jq '[ .[] | if .number == 41 then .body = (.body + "\n\nAdded after the plan was built.\n")
+      else . end ]' "$ex/backlog-existing-issues.json" > "$tmp/now-edited.json"
+reconcile "$tmp/now-edited.json" --drift-out "$tmp/drift-edited.md" \
+  > "$tmp/fresh-edited.json" 2>/dev/null || fail "reconcile: edited-issue case"
+jq -er '.actions[] | select(.key=="azure-bootstrap-identity") | .body' "$tmp/fresh-edited.json" \
+  | grep -q "Added after the plan was built" \
+  || fail "reconcile: clobbered text a human added after the plan was approved"
+jq -er '.actions[] | select(.key=="azure-bootstrap-identity") | .body' "$tmp/actions.json" \
+  | grep -q "Added after the plan was built" \
+  && fail "reconcile fixture: the approved plan already had the later edit"
+grep -q "body re-merged" "$tmp/drift-edited.md" || fail "reconcile: body re-merge not reported"
+pass "reconcile keeps text a human wrote after the plan was approved"
+
+# --- action-plan markdown: what the approver reads before releasing apply ---
+bash "$scripts/format-backlog-actions.sh" "$tmp/actions.json" https://example.test/run/1 \
+  > "$tmp/plan.md"
+grep -q "Backlog plan" "$tmp/plan.md" || fail "plan markdown: heading"
+grep -q "### Create" "$tmp/plan.md" || fail "plan markdown: create section"
+grep -q "### Update" "$tmp/plan.md" || fail "plan markdown: update section"
+grep -q "### Dropped" "$tmp/plan.md" || fail "plan markdown: dropped section"
+# Every title in the plan must be visible: an approval against a partial
+# rendering is an approval against something the approver did not see.
+while IFS= read -r title; do
+  grep -qF "$title" "$tmp/plan.md" || fail "plan markdown: title not shown — $title"
+done < <(jq -r '.actions[].title' "$tmp/actions.json")
+grep -q "until the \`apply\` job is approved" "$tmp/plan.md" || fail "plan markdown: gate not stated"
+pass "action-plan markdown"
+
+# --- an empty plan renders rather than producing a blank approval page ---
+printf '{"actions":[],"dropped":[],"summary":{"proposed":0,"kept":0,"dropped":0,"create":0,"update":0,"skip":0}}\n' \
+  > "$tmp/empty-actions.json"
+validate "$schemas/backlog-actions.schema.json" "$tmp/empty-actions.json" || fail "empty plan schema"
+bash "$scripts/format-backlog-actions.sh" "$tmp/empty-actions.json" > "$tmp/empty-plan.md"
+grep -q "Nothing to file" "$tmp/empty-plan.md" || fail "plan markdown: empty plan says nothing"
+pass "action-plan markdown handles an empty plan"
+
 bash "$scripts/format-backlog-groom.sh" "$tmp/groom-final.json" abc1234deadbeef \
   https://example.test/run/2 > "$tmp/groom.md"
 grep -q '<!-- ducknet-backlog-groom -->' "$tmp/groom.md" \

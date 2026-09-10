@@ -180,14 +180,55 @@ Cheap and frequent has a different failure budget than slow and consequential.
 | Chain | Stages | Model | Typical | Trigger |
 | --- | --- | --- | ---: | --- |
 | `refactor-scan` | 2 | Sonnet | `$1.50` | weekly Monday + dispatch |
-| `backlog-build` | 2 | Sonnet | `$1.50`–`$2.50` | dispatch only, `apply: false` by default |
+| `backlog-build` | 2 | Sonnet | `$1.50`–`$2.50` | dispatch only; filing is gated on approval |
 | `backlog-groom` | 2 | Sonnet | `$0.50`–`$1.00` | weekly Wednesday + dispatch |
 | `backlog-slice` | 1 | Sonnet | `$0.30`–`$0.60` | local command only |
 | `backlog-readiness` | 1 | Haiku, no tools | `~$0.02` | `issues: opened, edited` |
 
 Every one of them is advisory. `ci.yml` decides merge; these decide nothing.
 The strongest action any of them takes is creating an issue: `refactor-scan`
-weekly, and `backlog-build` only on an explicit dispatch with `apply: true`.
+weekly, and `backlog-build` only after a human releases the `backlog-apply`
+environment gate.
+
+A chain that files issues stops at a **plan**, and a separate un-modelled step
+applies it. `backlog-build.yml` ends by uploading a schema-validated
+`backlog-actions.json`; [`backlog-apply.yml`](../.github/workflows/backlog-apply.yml)
+waits on the `backlog-apply` environment, then downloads *that run's* artifact
+and files it. The plan is the approval boundary for the same reason a schema is
+the stage boundary: what the reviewer read is what runs. Re-dispatching the
+build to "approve" it would have re-run the model and filed something else.
+
+### An approval outlives the state it was resolved against
+
+Approval takes minutes or days, and the backlog moves underneath it. A plan
+pins issue numbers, open/closed state and human-edited bodies at build time, so
+filing it verbatim writes to issues that have since closed, duplicates issues
+that have since appeared, and overwrites text someone added in the meantime.
+
+The fix falls out of the stage discipline. `plan-backlog-issues.py` is a *pure
+function* of `(final.json, issue dump, sha, run_url)` — model-free, like every
+apply step here — so at apply time
+[`reconcile-backlog-plan.py`](../.github/scripts/reconcile-backlog-plan.py) can
+run it twice:
+
+```
+replay = plan(final, dump taken at build time)   # must equal the approved plan
+fresh  = plan(final, dump taken just now)        # this is what gets filed
+```
+
+The replay is the integrity check, and it is worth more than its size. Because
+the function is pure, reproducing the approved plan byte for byte proves *every*
+frozen input is unchanged at once: the chain's output, the planner's own source,
+the commit sha in the issue footers, the artifact. A mismatch files nothing. It
+is the same move as validating a stage boundary — re-derive the claim instead of
+trusting the envelope — which is why apply needs no pinned script version and no
+re-checkout of the build's commit.
+
+What the human approved is therefore the **content** (frozen model output: which
+items, what titles, what generated bodies). Where each item lands is bookkeeping,
+and bookkeeping is re-resolved against current facts. Every move is toward the
+safer outcome and every move is reported in the job summary; the item set and
+titles cannot move, and it is a hard failure if they do.
 
 Local commands (`/refactor-scan`, `/backlog-build`, `/backlog-groom`,
 `/backlog-slice`) never touch GitHub at all, and run on whatever login the

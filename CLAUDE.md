@@ -113,12 +113,16 @@ already has — no token export needed.
 
 ## Backlog chains
 
-Four agent chains keep the GitHub backlog honest. All advisory — `ci.yml` still
-decides merge, and none of them closes or relabels an issue.
+Four agent chains keep the GitHub backlog honest, plus one model-free workflow
+that files what they plan. All advisory — `ci.yml` still decides merge, and none
+of them closes or relabels an issue. A chain that would write to the backlog
+stops at a plan; `backlog-apply.yml` is the only thing that files one, and only
+after a human releases the `backlog-apply` environment gate.
 
 | Chain | Trigger | Does |
 |-------|---------|------|
-| `backlog-build.yml` | dispatch, `apply: false` by default | Builds epics + stories from the vision documents **and/or** the code — either alone is enough. An independent pass checks each candidate against the repo; `already-done` and `unfounded` are never filed. |
+| `backlog-build.yml` | dispatch | Builds epics + stories from the vision documents **and/or** the code — either alone is enough. An independent pass checks each candidate against the repo; `already-done` and `unfounded` are never filed. Files nothing itself: it ends at a schema-validated plan artifact. |
+| `backlog-apply.yml` | called by `backlog-build`, or dispatch with a `run_id` | Files a built plan. No model. Waits on the `backlog-apply` Environment (required reviewers) — approving approves the exact model output in the build summary, not a re-run. Re-resolves issue numbers against the live backlog first (`reconcile-backlog-plan.py`), so a plan approved late never writes to a since-closed issue, duplicates a since-filed one, or clobbers a human's edit. |
 | `backlog-groom.yml` | weekly Wednesday + dispatch | Reads the open backlog: needs refinement, belongs under a common parent, duplicate, stale, gap, ordering. One sticky **Backlog grooming report** issue, rewritten in place. |
 | `backlog-readiness.yml` | `issues: opened, edited` | One Haiku session, no tools: could someone pick this up on Monday? Sticky comment. Skips machine-written issues. |
 | `backlog-slice` | local `/backlog-slice <issue#>` | Cuts one oversized issue into tracer-bullet vertical slices, each leaving `main` runnable. |

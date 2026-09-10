@@ -156,16 +156,13 @@ def render(item: dict, children: dict, sha: str, run_url: str, planner: IssuePla
     return "\n".join(lines) + "\n"
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) < 4 or len(argv) > 5:
-        print("usage: plan-backlog-issues.py FINAL.json EXISTING.json SHA [RUN_URL]", file=sys.stderr)
-        return 2
+def build_plan(final: dict, existing: list[dict], sha: str, run_url: str = "") -> dict:
+    """The whole planner as one pure function of its inputs.
 
-    final = json.loads(Path(argv[1]).read_text())
-    existing = json.loads(Path(argv[2]).read_text())
-    sha = argv[3]
-    run_url = argv[4] if len(argv) > 4 else ""
-
+    Deterministic and model-free, which is what lets `reconcile-backlog-plan.py`
+    re-derive a plan at apply time: replay it against the issue dump taken at
+    build time and you must get the approved plan back, byte for byte.
+    """
     kept, dropped = partition(list(final.get("items") or []))
     children: dict[str, list] = {}
     for item in kept:
@@ -189,7 +186,20 @@ def main(argv: list[str]) -> int:
         "update": sum(1 for a in plan["actions"] if a["action"] == "update"),
         "skip": sum(1 for a in plan["actions"] if a["action"] == "skip"),
     }
-    print(json.dumps(plan, indent=2))
+    return plan
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 4 or len(argv) > 5:
+        print("usage: plan-backlog-issues.py FINAL.json EXISTING.json SHA [RUN_URL]", file=sys.stderr)
+        return 2
+
+    final = json.loads(Path(argv[1]).read_text())
+    existing = json.loads(Path(argv[2]).read_text())
+    sha = argv[3]
+    run_url = argv[4] if len(argv) > 4 else ""
+
+    print(json.dumps(build_plan(final, existing, sha, run_url), indent=2))
     return 0
 
 

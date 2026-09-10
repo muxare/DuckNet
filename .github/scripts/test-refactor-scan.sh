@@ -10,10 +10,11 @@ trap 'rm -rf "$tmp"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok - $*"; }
+validate() { python3 "$scripts/validate-json.py" "$1" "$2" --quiet; }
 
-# --- merge: join confidence by id ---
-bash "$scripts/merge-refactor-confidence.sh" \
-  "$ex/findings-refactor.json" "$ex/verdicts-refactor.json" \
+# --- merge: join confidence by id (the same primitive the backlog chains use) ---
+bash "$scripts/merge-confidence.sh" \
+  "$ex/findings-refactor.json" "$ex/verdicts-refactor.json" findings id finding \
   > "$tmp/final.json"
 
 jq -e '.findings | length == 2' "$tmp/final.json" >/dev/null \
@@ -26,19 +27,21 @@ jq -e '.findings[] | select(.id=="alarmcenter-ratewindow-linq-allocation") | .co
   "$tmp/final.json" >/dev/null || fail "merge: rationale"
 jq -e '.findings[] | select(.id=="alarmcenter-ratewindow-linq-allocation") | .detail' \
   "$tmp/final.json" >/dev/null || fail "merge: scanner detail kept"
+validate "$root/.github/schemas/refactor-findings-final.schema.json" "$tmp/final.json" \
+  || fail "merge: merged findings do not satisfy the schema the chain declares"
 pass "merge confidence join"
 
 # --- merge: missing assessment → null + note ---
 jq '{assessments: [.assessments[0]], notes: ["verify truncated"]}' \
   "$ex/verdicts-refactor.json" > "$tmp/partial-verdicts.json"
 
-bash "$scripts/merge-refactor-confidence.sh" \
-  "$ex/findings-refactor.json" "$tmp/partial-verdicts.json" \
+bash "$scripts/merge-confidence.sh" \
+  "$ex/findings-refactor.json" "$tmp/partial-verdicts.json" findings id finding \
   > "$tmp/partial.json"
 
 jq -e '.findings[] | select(.id=="eventbus-hostile-wrappers-decorator") | .confidence == null' \
   "$tmp/partial.json" >/dev/null || fail "partial: null confidence"
-jq -e '.notes | map(test("no independent confidence")) | any' \
+jq -e '.notes | map(test("no independent assessment for finding")) | any' \
   "$tmp/partial.json" >/dev/null || fail "partial: missing-assessment note"
 jq -e '.notes | index("verify truncated")' "$tmp/partial.json" >/dev/null \
   || fail "partial: verifier notes kept"
@@ -164,5 +167,37 @@ plan "$tmp/weak.json" "$tmp/none.json" deadbeef > "$tmp/weak-actions.json"
 jq -e '.actions | length == 0' "$tmp/weak-actions.json" >/dev/null \
   || fail "plan: weak findings create nothing"
 pass "plan skip closed and weak"
+
+# --- merge: an empty scan still produces a valid findings-final.json ---
+# The bash version short-circuited before the merge; the chain skips the verify
+# stage instead and merges its declared skip_output, so the file gains a note.
+printf '%s\n' '{"assessments":[],"notes":["no findings to assess"]}' > "$tmp/skipped.json"
+bash "$scripts/merge-confidence.sh" \
+  "$tmp/empty.json" "$tmp/skipped.json" findings id finding > "$tmp/empty-final.json"
+validate "$root/.github/schemas/refactor-findings-final.schema.json" "$tmp/empty-final.json" \
+  || fail "empty merge: schema"
+jq -e '.findings | length == 0' "$tmp/empty-final.json" >/dev/null || fail "empty merge: findings"
+jq -e '.notes | index("no findings to assess")' "$tmp/empty-final.json" >/dev/null \
+  || fail "empty merge: skip note not carried through"
+pass "empty scan merges cleanly"
+
+# --- chain: the manifest runs, and its blinding filter really strips the argument ---
+python3 "$scripts/run-chain.py" "$root/.github/chains/refactor-scan.json" "$tmp/chain" --dry-run \
+  >/dev/null || fail "chain: dry run failed"
+[[ -f "$tmp/chain/scan-input.md" ]] || fail "chain: scan input not assembled"
+[[ -f "$tmp/chain/verify-input.md" ]] || fail "chain: verify input not assembled"
+[[ -f "$tmp/chain/scan-raw.json" ]] && fail "chain: dry run called the model"
+validate "$root/.github/schemas/chain-meta.schema.json" "$tmp/chain/chain-meta.json" \
+  || fail "chain: run report does not satisfy chain-meta.schema.json"
+
+blind=$(jq -r '.stages[] | select(.id=="verify") | .context[0].jq' \
+  "$root/.github/chains/refactor-scan.json")
+jq "$blind" "$ex/findings-refactor.json" > "$tmp/blinded.json"
+jq -e '.findings | length == 2' "$tmp/blinded.json" >/dev/null || fail "blind: findings dropped"
+for field in detail effort risk; do
+  grep -q "\"$field\"" "$tmp/blinded.json" \
+    && fail "verify input leaks the scanner's $field — the assessment is anchored"
+done
+pass "chain dry run and blinding filter"
 
 echo "All refactor-scan fixture tests passed."

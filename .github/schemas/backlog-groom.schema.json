@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet backlog groom — findings",
+  "description": "Output of the groom stage. One flat findings array with a kind discriminator rather than one array per concern, so the same merge-confidence.sh join works here as in backlog-build. No confidence field: an independent pass scores it.",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "One to three sentences on the shape and health of the backlog as a whole."
+    },
+    "backlog_size": {
+      "type": "integer",
+      "description": "How many issues were read. Zero means the dump was empty or unreadable."
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Stable kebab-case slug, e.g. group-consumer-base-extraction or refine-25-acceptance. Stable across runs so a recurring finding is recognisable."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["refinement", "grouping", "duplicate", "stale", "gap", "ordering"],
+            "description": "refinement: the issue is not ready to pick up. grouping: several issues are one user story or epic. duplicate: two issues are the same work. stale: the premise no longer holds in the code. gap: work the code or documents imply that no issue covers. ordering: one issue must land before another."
+          },
+          "title": { "type": "string", "description": "One line." },
+          "issues": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "Issue numbers this finding concerns. Empty only for kind gap."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "major", "minor"],
+            "description": "blocker: nobody can pick this up as written. major: it will cost a round-trip. minor: tidying."
+          },
+          "detail": { "type": "string", "description": "What is wrong or what the relationship is, and what to do about it." },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["acceptance-criteria", "scope", "files", "size", "context", "testability", "title-clarity"]
+            },
+            "description": "kind refinement: what the issue lacks."
+          },
+          "suggested_title": { "type": "string", "description": "kind refinement or grouping: a better title." },
+          "suggested_body": {
+            "type": "string",
+            "description": "kind refinement: a rewritten body a human can paste. kind grouping: the parent user story or epic body, including a task list of its children."
+          },
+          "keep": { "type": "integer", "description": "kind duplicate: which issue number to keep." },
+          "blocked_by": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "kind ordering: issue numbers that must land first."
+          },
+          "evidence": {
+            "type": "array",
+            "description": "kind stale or gap: what in the code supports the claim.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": { "type": "string" },
+                "detail": { "type": "string" }
+              },
+              "required": ["source", "detail"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["id", "kind", "title", "issues", "severity", "detail"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Observations that did not clear the bar, and anything about the backlog as a whole. Empty array if none."
+    },
+    "error": { "type": "string" }
+  },
+  "required": ["summary", "backlog_size", "findings", "notes"],
+  "additionalProperties": false
+}

@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet agent chain manifest",
+  "description": "A chain is an ordered list of isolated Claude sessions. Every stage declares the schema its output must satisfy; stages exchange data only as validated structured JSON, never as prose.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Chain id. Also the default output directory name."
+    },
+    "description": { "type": "string" },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Unique within the chain. Names the output files and is how later stages refer to this one."
+          },
+          "description": { "type": "string" },
+          "prompt": { "type": "string", "description": "Repo-relative path to the prompt file." },
+          "schema": { "type": "string", "description": "Repo-relative path to the JSON schema this stage's structured output must satisfy." },
+          "model": { "type": "string", "enum": ["haiku", "sonnet", "opus"] },
+          "model_env": { "type": "string", "description": "Environment variable that overrides model." },
+          "budget": { "type": "string", "description": "Max spend in USD for this stage, as a decimal string." },
+          "budget_env": { "type": "string" },
+          "tools": {
+            "type": "string",
+            "description": "Comma-separated allowed tools, or 'none' for a no-tool session."
+          },
+          "max_turns": { "type": "integer", "minimum": 1 },
+          "max_turns_env": { "type": "string" },
+          "context": {
+            "type": "array",
+            "description": "Blocks appended to the prompt, in order, to build this stage's input.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "heading": { "type": "string", "description": "Markdown H2 introducing the block." },
+                "from": { "type": "string", "enum": ["file", "stage", "env", "text"] },
+                "path": { "type": "string", "description": "from=file: repo-relative or absolute path." },
+                "path_env": { "type": "string", "description": "from=file: environment variable holding the path. Wins over path." },
+                "stage": { "type": "string", "description": "from=stage: id of an earlier stage in this chain." },
+                "jq": { "type": "string", "description": "from=stage: jq filter applied to that stage's structured output before injection. Use it to strip the producing stage's own argument so the consumer cannot be anchored by it." },
+                "env": { "type": "string", "description": "from=env: environment variable name." },
+                "text": { "type": "string", "description": "from=text: literal text." },
+                "format": { "type": "string", "enum": ["json", "markdown", "text"], "description": "How the block is fenced. Default json for stage, text otherwise." },
+                "optional": { "type": "boolean", "description": "from=file/env: skip the block when absent instead of failing the stage." }
+              },
+              "required": ["from"],
+              "additionalProperties": false
+            }
+          },
+          "skip_if": {
+            "type": "object",
+            "description": "Evaluate a jq predicate against an earlier stage's output; when true this stage is not run and skip_output is written instead.",
+            "properties": {
+              "stage": { "type": "string" },
+              "jq": { "type": "string" },
+              "reason": { "type": "string" }
+            },
+            "required": ["stage", "jq"],
+            "additionalProperties": false
+          },
+          "skip_output": {
+            "type": "object",
+            "description": "Structured output written when skip_if fires. Must satisfy this stage's schema."
+          },
+          "on_missing_output": {
+            "type": "string",
+            "enum": ["fail", "degrade"],
+            "description": "What to do when the session returns no structured output or fails validation. fail stops the chain (use for the stage that produces the work). degrade writes degrade_output and continues (use for an assessment stage: losing the assessment must not lose the work)."
+          },
+          "degrade_output": {
+            "type": "object",
+            "description": "Structured output written when on_missing_output is degrade. Must satisfy this stage's schema."
+          }
+        },
+        "required": ["id", "prompt", "schema", "model", "budget", "tools"],
+        "additionalProperties": false
+      }
+    },
+    "merge": {
+      "type": "object",
+      "description": "Deterministic join of stage outputs. A script — jq or Python — never a model.",
+      "properties": {
+        "script": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Placeholders: {{stage:ID}} is that stage's structured output file, {{outdir}} the chain output directory."
+        },
+        "output": { "type": "string", "description": "File name written inside the output directory." },
+        "schema": { "type": "string", "description": "Optional schema the merged result must satisfy." }
+      },
+      "required": ["script", "args", "output"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["name", "stages"],
+  "additionalProperties": false
+}

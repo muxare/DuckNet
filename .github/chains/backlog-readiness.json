@@ -1,0 +1,26 @@
+{
+  "name": "backlog-readiness",
+  "description": "Judge one issue's readiness from its text alone. One stage, Haiku, no tools: it runs on every issue edit, so it has to be cheap and it has to be fast.",
+  "stages": [
+    {
+      "id": "readiness",
+      "prompt": ".github/prompts/backlog-readiness.md",
+      "schema": ".github/schemas/backlog-readiness.schema.json",
+      "model": "haiku",
+      "model_env": "READINESS_MODEL",
+      "budget": "0.10",
+      "budget_env": "READINESS_BUDGET_USD",
+      "tools": "none",
+      "max_turns": 3,
+      "context": [
+        {
+          "heading": "The issue",
+          "from": "file",
+          "path_env": "READINESS_ISSUE_FILE",
+          "format": "json"
+        }
+      ],
+      "on_missing_output": "fail"
+    }
+  ]
+}

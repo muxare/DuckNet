@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet refactor scan — merged result",
+  "description": "What merge-confidence.sh produces from the scan and the independent pass. Loose on the scanner's own fields; strict about the join having landed: every finding carries a confidence slot, null when the assessment pass did not cover it.",
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "tier": { "type": "string", "enum": ["patch", "plan"] },
+          "title": { "type": "string" },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "confidence_rationale": { "type": ["string", "null"] }
+        },
+        "required": ["id", "tier", "title", "confidence", "confidence_rationale"]
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["summary", "findings", "notes"]
+}

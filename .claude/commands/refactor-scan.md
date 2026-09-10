@@ -8,11 +8,16 @@ disable-model-invocation: true
 Run the two-stage refactor scan locally (team-shared, human-triggered). Advisory — not a merge gate. Does not open GitHub issues; weekly CI creates or updates one issue per held task.
 
 1. Outdir = `$ARGUMENTS` when it is a non-empty path; otherwise `/tmp/refactor-scan`.
-2. From the repo root. Requires `claude` on PATH (logged in) and `jq`.
+2. From the repo root. Requires `claude` on PATH (logged in), `python3`, and `jq`.
+   No `CLAUDE_CODE_OAUTH_TOKEN` needed locally — that is a CI secret.
 
 ```bash
 bash .github/scripts/run-refactor-scan.sh <outdir>
 ```
+
+   To read the two prompts without spending anything, add `--dry-run`. The scan
+   is a chain manifest ([`.github/chains/refactor-scan.json`](../../.github/chains/refactor-scan.json));
+   see [docs/agent-chains.md](../../docs/agent-chains.md).
 
 3. Print the summary the script already writes, then `outdir/findings-final.json`.
 4. Optional readable markdown:

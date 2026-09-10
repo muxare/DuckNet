@@ -1,0 +1,76 @@
+{
+  "name": "backlog-build",
+  "description": "Build a backlog from description/vision documents and/or the code, then have an independent session check every candidate against the repository before anything is filed.",
+  "stages": [
+    {
+      "id": "build",
+      "description": "Produce candidate epics and stories. Cannot score itself: its schema has no state and no confidence field.",
+      "prompt": ".github/prompts/backlog-build.md",
+      "schema": ".github/schemas/backlog-items.schema.json",
+      "model": "sonnet",
+      "model_env": "BUILD_MODEL",
+      "budget": "1.50",
+      "budget_env": "BUILD_BUDGET_USD",
+      "tools": "Read,Grep,Glob",
+      "max_turns": 60,
+      "max_turns_env": "BUILD_MAX_TURNS",
+      "context": [
+        {
+          "heading": "Description and vision documents",
+          "from": "file",
+          "path_env": "BACKLOG_SOURCES_FILE",
+          "format": "markdown"
+        },
+        {
+          "heading": "Existing GitHub backlog",
+          "from": "file",
+          "path_env": "BACKLOG_ISSUES_FILE",
+          "format": "json",
+          "optional": true
+        }
+      ],
+      "on_missing_output": "fail"
+    },
+    {
+      "id": "verify",
+      "description": "Independent pass. The producer's body, size, and evidence detail are stripped so it judges against the code, not against the pitch.",
+      "prompt": ".github/prompts/backlog-verify.md",
+      "schema": ".github/schemas/backlog-verdicts.schema.json",
+      "model": "sonnet",
+      "model_env": "VERIFY_MODEL",
+      "budget": "1.00",
+      "budget_env": "VERIFY_BUDGET_USD",
+      "tools": "Read,Grep,Glob",
+      "max_turns": 50,
+      "max_turns_env": "VERIFY_MAX_TURNS",
+      "context": [
+        {
+          "heading": "Candidate items to assess",
+          "from": "stage",
+          "stage": "build",
+          "jq": "{items: [.items[] | {id, kind, title, parent, acceptance_criteria, depends_on, evidence: [.evidence[] | {source}]}]}"
+        }
+      ],
+      "skip_if": {
+        "stage": "build",
+        "jq": "(.items | length) == 0",
+        "reason": "the build stage produced no candidates"
+      },
+      "skip_output": {
+        "assessments": [],
+        "notes": ["no candidate items to assess"]
+      },
+      "on_missing_output": "degrade",
+      "degrade_output": {
+        "assessments": [],
+        "notes": ["the independent assessment pass produced no usable output; items are unassessed and every confidence is null"]
+      }
+    }
+  ],
+  "merge": {
+    "script": ".github/scripts/merge-confidence.sh",
+    "args": ["{{stage:build}}", "{{stage:verify}}", "items", "id", "item"],
+    "output": "backlog-final.json",
+    "schema": ".github/schemas/backlog-final.schema.json"
+  }
+}

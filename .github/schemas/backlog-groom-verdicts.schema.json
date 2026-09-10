@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet backlog groom — independent assessment",
+  "description": "Output of the groom verify stage. Every claim about the code (stale, gap) and about the backlog (duplicate, grouping) is re-checked by a session that did not make it.",
+  "type": "object",
+  "properties": {
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "The finding's id. Exactly one assessment per finding." },
+          "verdict": {
+            "type": "string",
+            "enum": ["holds", "partly", "does-not-hold"],
+            "description": "holds: checked and true. partly: the observation is real but the conclusion overreaches. does-not-hold: contradicted by the issues or the code."
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "rationale": { "type": "string", "description": "One or two sentences naming what was checked." },
+          "evidence_checked": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Paths opened, or issue numbers re-read, while assessing this finding."
+          }
+        },
+        "required": ["id", "verdict", "confidence", "rationale", "evidence_checked"],
+        "additionalProperties": false
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["assessments", "notes"],
+  "additionalProperties": false
+}

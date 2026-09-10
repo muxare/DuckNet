@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet backlog build — candidate items",
+  "description": "Output of the build stage. Deliberately has no field for 'is this already implemented' and no confidence field: an independent verify stage decides both against the code.",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "One to three sentences: what was read and the shape of the backlog produced."
+    },
+    "sources": {
+      "type": "array",
+      "description": "What the build actually read. A source listed here must have been opened.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["document", "code"] },
+          "ref": { "type": "string", "description": "Repository-relative path." },
+          "used": { "type": "string", "description": "What this source contributed." }
+        },
+        "required": ["kind", "ref", "used"],
+        "additionalProperties": false
+      }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Stable kebab-case slug from the subject, e.g. dashboard-dlq-replay-ui. Stable across runs so re-runs update rather than duplicate issues."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["epic", "story"],
+            "description": "epic: a parent that groups stories and is not itself implementable. story: one independently mergeable piece of work."
+          },
+          "title": { "type": "string", "description": "One line, imperative." },
+          "parent": {
+            "type": ["string", "null"],
+            "description": "id of an epic in this same array, or null. An epic must have parent null."
+          },
+          "body": {
+            "type": "string",
+            "description": "Markdown: motivation, scope, and what is explicitly out of scope."
+          },
+          "acceptance_criteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" },
+            "description": "Observable, checkable outcomes. For a story, at least one must be verifiable by a test or a runnable command."
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Why this item exists. Every item must trace to something actually read.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": { "type": "string", "description": "Repository-relative path." },
+                "detail": { "type": "string", "description": "A short quote from the document, or the symbol/file the gap was observed in." }
+              },
+              "required": ["source", "detail"],
+              "additionalProperties": false
+            }
+          },
+          "size": { "type": "string", "enum": ["trivial", "small", "medium", "large"] },
+          "labels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Repository labels. CI adds 'backlog' and 'backlog-build' itself; epics also get 'epic'."
+          },
+          "depends_on": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "ids in this same array that must land first. Empty if none. Not the same as parent."
+          }
+        },
+        "required": ["id", "kind", "title", "parent", "body", "acceptance_criteria", "evidence", "size", "labels", "depends_on"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Candidates that did not clear the bar, and gaps in the sources. Empty array if none."
+    },
+    "error": { "type": "string" }
+  },
+  "required": ["summary", "sources", "items", "notes"],
+  "additionalProperties": false
+}

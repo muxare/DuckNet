@@ -4,9 +4,10 @@
 Merge only — no Claude. Held findings (confidence missing or >= 0.6) become
 issues: one per patch finding, one per plan-tier proposed_issues item.
 
-Match open issues by <!-- ducknet-refactor:KEY --> first, then case-insensitive
-title. Closed issues (typically label refactor-scan) skip create. Updates
-replace the generated block; text outside the markers is kept.
+The matching rules live in `issue_plan.IssuePlanner`, shared with the backlog
+chains: match open issues by `<!-- ducknet-refactor:KEY -->` first, then by
+normalised title; a closed match skips create; an update replaces the generated
+block and keeps whatever a human wrote outside the markers.
 
 usage: plan-refactor-issues.py FINDINGS.json EXISTING.json SHA [RUN_URL]
 EXISTING.json: [{number, title, body, state, labels?}, ...]
@@ -17,13 +18,14 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from issue_plan import IssuePlanner  # noqa: E402
+
 CONFIDENCE_BAR = 0.6
-MARKER_END = "<!-- /ducknet-refactor -->"
+NAMESPACE = "ducknet-refactor"
 STICKY_MARKER = "<!-- ducknet-refactor-scan -->"
 
-
-def marker_start(key: str) -> str:
-    return f"<!-- ducknet-refactor:{key} -->"
+PLANNER = IssuePlanner(NAMESPACE, sticky_marker=STICKY_MARKER)
 
 
 def held(item: dict) -> bool:
@@ -102,7 +104,7 @@ def generated_block(item: dict, sha: str, run_url: str) -> str:
     title = item["title"]
     files = finding.get("files") or []
     lines = [
-        marker_start(key),
+        PLANNER.marker_start(key),
         f"<!-- sha: {sha} -->",
         f"## {title}",
         "",
@@ -142,118 +144,13 @@ def generated_block(item: dict, sha: str, run_url: str) -> str:
     if run_url:
         footer += f" · [run]({run_url})"
     footer += " · not a merge gate._"
-    lines.extend(["", footer, MARKER_END])
+    lines.extend(["", footer, PLANNER.marker_end])
     return "\n".join(lines) + "\n"
-
-
-def splice_generated(old_body: str, key: str, generated: str) -> str:
-    start = marker_start(key)
-    old = old_body or ""
-    if start in old:
-        before, rest = old.split(start, 1)
-        if MARKER_END in rest:
-            _, after = rest.split(MARKER_END, 1)
-            return before + generated.rstrip("\n") + after
-        return before + generated
-    stripped = old.strip()
-    if stripped:
-        return generated + "\n---\n\n### Previous description\n\n" + stripped + "\n"
-    return generated
-
-
-def parse_keys(body: str) -> list:
-    keys = []
-    prefix = "<!-- ducknet-refactor:"
-    text = body or ""
-    start = 0
-    while True:
-        i = text.find(prefix, start)
-        if i < 0:
-            break
-        j = text.find(" -->", i)
-        if j < 0:
-            break
-        key = text[i + len(prefix) : j]
-        start = j + 4
-        if key.startswith("/"):
-            continue
-        if key not in keys:
-            keys.append(key)
-    return keys
-
-
-def norm_title(title: str) -> str:
-    return " ".join((title or "").casefold().split())
-
-
-def index_issues(existing: list) -> tuple[dict, dict, dict, dict]:
-    open_by_key, closed_by_key = {}, {}
-    open_by_title, closed_by_title = {}, {}
-    for issue in existing:
-        if issue.get("pull_request"):
-            continue
-        if STICKY_MARKER in (issue.get("body") or ""):
-            continue
-        state = (issue.get("state") or "open").lower()
-        body = issue.get("body") or ""
-        title_key = norm_title(issue.get("title") or "")
-        by_key = open_by_key if state == "open" else closed_by_key
-        by_title = open_by_title if state == "open" else closed_by_title
-        for key in parse_keys(body):
-            by_key.setdefault(key, issue)
-        if title_key:
-            by_title.setdefault(title_key, issue)
-    return open_by_key, open_by_title, closed_by_key, closed_by_title
 
 
 def plan(findings_obj: dict, existing: list, sha: str, run_url: str) -> dict:
     items = work_items(list(findings_obj.get("findings") or []))
-    open_by_key, open_by_title, closed_by_key, closed_by_title = index_issues(existing)
-    actions = []
-    for item in items:
-        key = item["key"]
-        title = item["title"]
-        generated = generated_block(item, sha, run_url)
-        matched = open_by_key.get(key)
-        reason = "marker"
-        if matched is None:
-            matched = open_by_title.get(norm_title(title))
-            reason = "title"
-        if matched is not None:
-            actions.append(
-                {
-                    "action": "update",
-                    "key": key,
-                    "number": matched["number"],
-                    "title": title,
-                    "body": splice_generated(matched.get("body") or "", key, generated),
-                    "labels": item["labels"],
-                    "reason": reason,
-                }
-            )
-            continue
-        closed = closed_by_key.get(key) or closed_by_title.get(norm_title(title))
-        if closed is not None:
-            actions.append(
-                {
-                    "action": "skip",
-                    "key": key,
-                    "number": closed["number"],
-                    "title": title,
-                    "reason": "closed",
-                }
-            )
-            continue
-        actions.append(
-            {
-                "action": "create",
-                "key": key,
-                "title": title,
-                "body": generated,
-                "labels": item["labels"],
-            }
-        )
-    return {"actions": actions}
+    return PLANNER.plan(items, existing, lambda item: generated_block(item, sha, run_url))
 
 
 def main(argv: list[str]) -> int:

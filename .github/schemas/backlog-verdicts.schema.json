@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet backlog build — independent assessment",
+  "description": "Output of the verify stage: a separate session that checks each candidate item against the code. merge-confidence.sh copies every field but id and rationale onto the item.",
+  "type": "object",
+  "properties": {
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "The candidate item's id. Exactly one assessment per item." },
+          "state": {
+            "type": "string",
+            "enum": ["new", "partially-implemented", "already-done", "unfounded"],
+            "description": "new: not in the code. partially-implemented: some of it exists. already-done: the code already satisfies the acceptance criteria. unfounded: the cited evidence does not hold."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Independent belief that this is real, correctly scoped, and worth filing as written."
+          },
+          "rationale": { "type": "string", "description": "One or two sentences naming what was checked and what was found." },
+          "evidence_checked": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Paths actually opened while assessing this item."
+          }
+        },
+        "required": ["id", "state", "confidence", "rationale", "evidence_checked"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": ["assessments", "notes"],
+  "additionalProperties": false
+}

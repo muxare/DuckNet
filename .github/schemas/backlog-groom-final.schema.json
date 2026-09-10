@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet backlog groom — merged result",
+  "description": "What merge-confidence.sh produces for the groom chain. Checks the join landed: every finding carries a verdict and a confidence slot, null when the assessment pass did not cover it.",
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "backlog_size": { "type": "integer" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["refinement", "grouping", "duplicate", "stale", "gap", "ordering"]
+          },
+          "title": { "type": "string" },
+          "verdict": { "type": ["string", "null"], "enum": ["holds", "partly", "does-not-hold", null] },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "confidence_rationale": { "type": ["string", "null"] }
+        },
+        "required": ["id", "kind", "title", "confidence", "confidence_rationale"]
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["summary", "findings", "notes"]
+}

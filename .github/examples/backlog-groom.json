@@ -1,0 +1,61 @@
+{
+  "summary": "Five open issues, all written by the weekly refactor scan. Three of them are one refactoring told in three parts and should sit under a parent; one is not pickup-ready; the board has no issue at all for Step 12c.",
+  "backlog_size": 5,
+  "findings": [
+    {
+      "id": "group-consumer-base-extraction",
+      "kind": "grouping",
+      "title": "Extract and adopt EventConsumerBase is one user story, not three issues",
+      "issues": [34, 36, 37],
+      "severity": "major",
+      "detail": "All three describe the same outcome: the Centers stop each carrying their own copy of the consumer scaffold. Filed separately, whoever picks up #37 has to discover #36 first.",
+      "suggested_title": "Consolidate the Center consumers onto one shared scaffold",
+      "suggested_body": "The four Centers each carry their own consumer loop, outbox dispatcher, and progress bookkeeping. Consolidate them behind one shared base so a fix lands once.\n\n- [ ] #36 — extract EventConsumerBase\n- [ ] #37 — migrate the three consumers onto it\n- [ ] #34 — de-duplicate RemoteOutboxDispatcher\n\nDone when no Center defines its own copy of the scaffold and `dotnet test` is green."
+    },
+    {
+      "id": "order-36-before-37",
+      "kind": "ordering",
+      "title": "#37 cannot start before #36 lands",
+      "issues": [37],
+      "severity": "blocker",
+      "detail": "#37 migrates the consumers onto EventConsumerBase, which #36 creates. The board does not say so, so #37 looks independently grabbable.",
+      "blocked_by": [36]
+    },
+    {
+      "id": "refine-25-acceptance",
+      "kind": "refinement",
+      "title": "#25 has no acceptance criteria and does not name the callers to migrate",
+      "issues": [25],
+      "severity": "major",
+      "detail": "The issue says to extract shared config helpers but not where they should live or which call sites move. Two people would produce two different PRs.",
+      "missing": ["acceptance-criteria", "files", "scope"],
+      "suggested_body": "Extract the repeated `IsTrue` / `IsFalse` / `ParseInt` / `ParseRate` helpers into one place shared by the Centers.\n\nAcceptance criteria:\n\n- [ ] The helpers live in `src/DuckNet.Kernel` and no Center defines its own copy\n- [ ] Every existing call site uses them\n- [ ] `dotnet test` is green"
+    },
+    {
+      "id": "gap-step-12c-azure",
+      "kind": "gap",
+      "title": "Step 12c has no issue on the board",
+      "issues": [],
+      "severity": "major",
+      "detail": "The roadmap's next step is the first live Azure environment, and the whole board is refactoring. Nothing tracks the deploy work.",
+      "evidence": [
+        { "source": "ImplementationPlan.md", "detail": "Step 12c is the next planned step" },
+        { "source": "infra/bicep", "detail": "templates exist but nothing applies them" }
+      ]
+    },
+    {
+      "id": "stale-38-duck-progress",
+      "kind": "stale",
+      "title": "#38 may already be done",
+      "issues": [38],
+      "severity": "minor",
+      "detail": "The duck_progress bookkeeping looks like it was already pulled into a shared helper.",
+      "evidence": [
+        { "source": "src/DuckNet.Kernel/Persistence", "detail": "a shared progress helper appears to exist" }
+      ]
+    }
+  ],
+  "notes": [
+    "Every open issue came from the refactor scan; no human has filed one. Worth noticing as a fact about the board, not a defect."
+  ]
+}

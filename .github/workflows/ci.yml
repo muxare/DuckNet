@@ -18,6 +18,9 @@ jobs:
       - name: Refactor-scan fixtures
         run: bash .github/scripts/test-refactor-scan.sh
 
+      - name: Backlog chain fixtures
+        run: bash .github/scripts/test-backlog.sh
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:

@@ -1,0 +1,61 @@
+{
+  "name": "refactor-scan",
+  "description": "Whole-tree refactoring scan: one session finds opportunities, an independent session re-checks each one against the code and scores confidence, jq merges. The oldest chain in the repo — it was hand-coded in bash until the backlog chains generalised the pattern into this manifest engine.",
+  "stages": [
+    {
+      "id": "scan",
+      "description": "Find refactoring opportunities. Cannot score itself: its schema has no confidence field.",
+      "prompt": ".github/prompts/refactor-scan.md",
+      "schema": ".github/schemas/refactor-findings.schema.json",
+      "model": "sonnet",
+      "model_env": "SCAN_MODEL",
+      "budget": "1.00",
+      "budget_env": "SCAN_BUDGET_USD",
+      "tools": "Read,Grep,Glob",
+      "max_turns": 40,
+      "max_turns_env": "SCAN_MAX_TURNS",
+      "on_missing_output": "fail"
+    },
+    {
+      "id": "verify",
+      "description": "Independent pass. The scanner's argument — detail, effort, risk — is stripped so it judges each claim against the code, not against the persuasion.",
+      "prompt": ".github/prompts/refactor-verify.md",
+      "schema": ".github/schemas/refactor-verdicts.schema.json",
+      "model": "sonnet",
+      "model_env": "VERIFY_MODEL",
+      "budget": "0.50",
+      "budget_env": "VERIFY_BUDGET_USD",
+      "tools": "Read,Grep,Glob",
+      "max_turns": 30,
+      "max_turns_env": "VERIFY_MAX_TURNS",
+      "context": [
+        {
+          "heading": "Findings to assess",
+          "from": "stage",
+          "stage": "scan",
+          "jq": "{findings: [.findings[] | del(.detail, .effort, .risk)]}"
+        }
+      ],
+      "skip_if": {
+        "stage": "scan",
+        "jq": "(.findings | length) == 0",
+        "reason": "the scan found nothing to assess"
+      },
+      "skip_output": {
+        "assessments": [],
+        "notes": ["no findings to assess"]
+      },
+      "on_missing_output": "degrade",
+      "degrade_output": {
+        "assessments": [],
+        "notes": ["confidence pass failed; confidence not assessed"]
+      }
+    }
+  ],
+  "merge": {
+    "script": ".github/scripts/merge-confidence.sh",
+    "args": ["{{stage:scan}}", "{{stage:verify}}", "findings", "id", "finding"],
+    "output": "findings-final.json",
+    "schema": ".github/schemas/refactor-findings-final.schema.json"
+  }
+}

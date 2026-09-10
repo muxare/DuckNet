@@ -55,7 +55,8 @@ src/DuckNet.BillingCenter/    # own DB; saga on AlarmRaised / AlarmResolved; tim
 tests/                        # kernel + EventBus + AlarmCenter + DashboardCenter + BillingCenter
 infra/bicep/                  # Azure resources (compile in 12b, apply in 12c)
 infra/docker/                 # one Dockerfile per Center
-.github/workflows/            # ci.yml, claude-review.yml, refactor-scan.yml, deploy-center.yml, infra.yml
+.github/workflows/            # ci.yml, claude-review.yml, refactor-scan.yml, backlog-*.yml, deploy-center.yml, infra.yml
+.github/chains/               # agent chain manifests (schema-typed multi-stage sessions)
 ```
 
 ## Build & test
@@ -67,7 +68,7 @@ dotnet run --project src/DuckNet.Kernel -- --reset-db --seconds 5
 dotnet run --project src/DuckNet.AppHost
 ```
 
-Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (AppHost), `/refactor-scan`. Format hook: `dotnet format` on `*.cs` after agent edits.
+Slash commands: `/run-demo`, `/mis-demo` (kernel), `/run-aspire` (AppHost), `/refactor-scan`, `/backlog-build`, `/backlog-groom`, `/backlog-slice`. Format hook: `dotnet format` on `*.cs` after agent edits.
 
 ## PR review
 
@@ -96,14 +97,44 @@ Mention `@claude` on any PR or issue to ask questions interactively
 
 `refactor-scan.yml` is weekly (Monday) + `workflow_dispatch`. Whole-tree, not
 a PR diff: Sonnet finds opportunities, a second Sonnet session scores
-confidence, `jq` merges. CI creates or updates one GitHub issue per held
+confidence, `jq` merges. It runs on the chain engine —
+[`.github/chains/refactor-scan.json`](.github/chains/refactor-scan.json) — so
+the stage contracts, blinding, and failure modes are the ones described under
+**Backlog chains** below. CI creates or updates one GitHub issue per held
 patch finding and per plan-tier `proposed_issues` item (dedupe open issues by
 scan marker, then title; skip if a matching `refactor-scan` issue is already
 closed). Advisory — not a merge gate, not on PRs. Local: `/refactor-scan` or
 `bash .github/scripts/run-refactor-scan.sh` (prints JSON; does not open issues).
 
-Both review and the refactor scan need the repo secret `CLAUDE_CODE_OAUTH_TOKEN`
-(`claude setup-token`).
+In CI, review, the refactor scan, and the backlog chains all need the repo
+secret `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`); a missing one fails
+the job as infrastructure. Locally they run on whatever login the `claude` CLI
+already has — no token export needed.
+
+## Backlog chains
+
+Four agent chains keep the GitHub backlog honest. All advisory — `ci.yml` still
+decides merge, and none of them closes or relabels an issue.
+
+| Chain | Trigger | Does |
+|-------|---------|------|
+| `backlog-build.yml` | dispatch, `apply: false` by default | Builds epics + stories from the vision documents **and/or** the code — either alone is enough. An independent pass checks each candidate against the repo; `already-done` and `unfounded` are never filed. |
+| `backlog-groom.yml` | weekly Wednesday + dispatch | Reads the open backlog: needs refinement, belongs under a common parent, duplicate, stale, gap, ordering. One sticky **Backlog grooming report** issue, rewritten in place. |
+| `backlog-readiness.yml` | `issues: opened, edited` | One Haiku session, no tools: could someone pick this up on Monday? Sticky comment. Skips machine-written issues. |
+| `backlog-slice` | local `/backlog-slice <issue#>` | Cuts one oversized issue into tracer-bullet vertical slices, each leaving `main` runnable. |
+
+A chain is a manifest in `.github/chains/`, run by
+`.github/scripts/run-chain.py`. **Nothing crosses a stage boundary except a
+structured object validated against a declared schema** — never prose. The
+producing stage's schema has no confidence field, so it cannot score itself,
+and `jq` strips its argument before the assessor sees the claims. The refactor
+scan runs on the same engine; `merge-confidence.sh` and `issue_plan.py` are
+shared by all of them. Read [docs/agent-chains.md](docs/agent-chains.md)
+before adding or changing one.
+
+Fixture tests need no token and no network: `bash .github/scripts/test-backlog.sh`
+and `bash .github/scripts/test-refactor-scan.sh`. Both run in `ci.yml`.
+Dry-run any chain with `python3 .github/scripts/run-chain.py <manifest> <outdir> --dry-run`.
 
 ## Agent automation opportunities (CCA-F)
 
@@ -130,7 +161,7 @@ DuckNet is a CCA-F study lab. While working, **spot and propose** reusable agent
 
 When you find one, propose the path, frontmatter (`description`, `allowed-tools`, `argument-hint`, `context: fork` if needed), and why. Wait for approval.
 
-Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; commands `/run-demo`, `/mis-demo`, `/run-aspire`, `/refactor-scan`; PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
+Live: skills `ducknet-kernel`, `ducknet-center`, and `ducknet-event-contract`; commands `/run-demo`, `/mis-demo`, `/run-aspire`, `/refactor-scan`, `/backlog-build`, `/backlog-groom`, `/backlog-slice`; agent chains in `.github/chains/` ([docs/agent-chains.md](docs/agent-chains.md)); PostToolUse hook `dotnet format` on `*.cs`. Planned: `ducknet-mcp-ops` (Step 9+). See [ImplementationPlan.md](./ImplementationPlan.md#cca-f-integration--development--cicd--system).
 
 ## Step progress
 

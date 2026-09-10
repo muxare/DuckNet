@@ -1,0 +1,100 @@
+name: Claude backlog groom
+
+# Read the open backlog and the code, then publish one grooming report issue,
+# rewritten in place. Advisory: it reports, it never relabels, closes, or
+# rewrites an issue. Wednesday, so it grooms what Monday's refactor scan filed.
+#
+# Not a merge gate, not on pull_request.
+
+on:
+  schedule:
+    # Wednesday 07:23 UTC. Offset from :00; two days after refactor-scan.
+    # Public-repo cron dies after 60 days of inactivity — dispatch is the net.
+    - cron: '23 7 * * 3'
+  workflow_dispatch:
+    inputs:
+      state:
+        description: 'Which issues to groom.'
+        type: choice
+        options: ['open', 'all']
+        required: false
+        default: 'open'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: backlog-groom
+  cancel-in-progress: true
+
+env:
+  CLAUDE_CLI_VERSION: '2.1.246'
+
+jobs:
+  groom:
+    name: groom
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}"
+
+      - name: Run the backlog-groom chain
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p backlog-groom
+          bash .github/scripts/run-backlog-groom.sh backlog-groom \
+            --state "${{ inputs.state || 'open' }}"
+
+      - name: Stop early when the backlog is empty
+        id: gate
+        run: |
+          set -euo pipefail
+          if [[ -f backlog-groom/groom-final.json ]]; then
+            echo "have_report=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_report=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nothing to groom."
+          fi
+
+      - name: Format the report
+        if: steps.gate.outputs.have_report == 'true'
+        env:
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash .github/scripts/format-backlog-groom.sh \
+            backlog-groom/groom-final.json "$SHA" "$RUN_URL" > groom-report.md
+          cat groom-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.have_report == 'true'
+        with:
+          name: backlog-groom
+          path: |
+            backlog-groom/
+            groom-report.md
+          if-no-files-found: error
+
+      - name: Publish the sticky grooming report
+        if: steps.gate.outputs.have_report == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const path = require('path');
+            const apply = require(path.join(
+              process.env.GITHUB_WORKSPACE,
+              '.github/scripts/apply-groom-report.js'
+            ));
+            await apply({ github, context, core });

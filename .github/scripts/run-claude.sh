@@ -33,13 +33,20 @@ if [[ -z "$schema" || -z "$model" || -z "$budget" || -z "$input" || -z "$output"
   exit 2
 fi
 
+# In CI a missing token is infrastructure: fail loudly rather than burn a job
+# discovering the CLI is anonymous. Locally the CLI has its own login, which is
+# what `/refactor-scan` and the backlog commands have always claimed to need —
+# demanding the token there made the documented local flow impossible to run.
 if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-  echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set on this repository."
-  echo "claude_exit=2"
-  if [[ -n "${meta:-}" ]]; then
-    echo "claude_exit=2" >> "$meta"
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set on this repository."
+    echo "claude_exit=2"
+    if [[ -n "${meta:-}" ]]; then
+      echo "claude_exit=2" >> "$meta"
+    fi
+    exit 2
   fi
-  exit 2
+  echo "run-claude: CLAUDE_CODE_OAUTH_TOKEN not set; using the local CLI login" >&2
 fi
 
 args=(

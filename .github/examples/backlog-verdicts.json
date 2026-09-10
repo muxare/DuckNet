@@ -1,0 +1,42 @@
+{
+  "assessments": [
+    {
+      "id": "azure-first-environment",
+      "state": "new",
+      "confidence": 0.9,
+      "rationale": "infra/bicep contains templates and infra.yml only runs build/what-if against no subscription; nothing is deployed.",
+      "evidence_checked": ["infra/bicep", ".github/workflows/infra.yml"]
+    },
+    {
+      "id": "azure-bootstrap-identity",
+      "state": "new",
+      "confidence": 0.85,
+      "rationale": "docs/azure-first-deploy.md documents the steps; no federated credential exists in the repo configuration.",
+      "evidence_checked": ["docs/azure-first-deploy.md", ".github/workflows/deploy-center.yml"]
+    },
+    {
+      "id": "azure-deploy-centers",
+      "state": "partially-implemented",
+      "confidence": 0.7,
+      "rationale": "deploy-center.yml already builds and pushes images; only the rollout step and the live target are missing.",
+      "evidence_checked": [".github/workflows/deploy-center.yml", "infra/docker"]
+    },
+    {
+      "id": "dashboard-dlq-replay-ui",
+      "state": "already-done",
+      "confidence": 0.1,
+      "rationale": "DashboardCenter already exposes a DLQ list and replay endpoint, and the Vue view renders both.",
+      "evidence_checked": ["src/DuckNet.DashboardCenter"]
+    },
+    {
+      "id": "contracts-squeaked-v3",
+      "state": "new",
+      "confidence": 0.35,
+      "rationale": "v3 genuinely does not exist, but no consumer needs the field; this is speculative contract churn.",
+      "evidence_checked": ["src/DuckNet.Contracts", "src/DuckNet.AlarmCenter"]
+    }
+  ],
+  "notes": [
+    "azure-deploy-centers as written overlaps the bootstrap story; confirm the split before filing."
+  ]
+}

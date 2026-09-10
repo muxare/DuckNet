@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet backlog — issue action plan",
+  "description": "What plan-backlog-issues.py hands to the apply script. Validated before anything touches GitHub, so a malformed plan fails on the runner rather than half-way through the backlog.",
+  "type": "object",
+  "properties": {
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["create", "update", "skip"] },
+          "key": { "type": "string" },
+          "title": { "type": "string" },
+          "number": { "type": "integer", "description": "Required for update and skip." },
+          "body": { "type": "string" },
+          "labels": { "type": "array", "items": { "type": "string" } },
+          "reason": { "type": "string" }
+        },
+        "required": ["action", "key", "title"],
+        "additionalProperties": false
+      }
+    },
+    "dropped": {
+      "type": "array",
+      "description": "Items the independent pass knocked out. Reported, never filed.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "reason": { "type": "string" }
+        },
+        "required": ["id", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "proposed": { "type": "integer" },
+        "kept": { "type": "integer" },
+        "dropped": { "type": "integer" },
+        "create": { "type": "integer" },
+        "update": { "type": "integer" },
+        "skip": { "type": "integer" }
+      },
+      "required": ["proposed", "kept", "dropped", "create", "update", "skip"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["actions", "dropped", "summary"],
+  "additionalProperties": false
+}

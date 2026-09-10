@@ -1,0 +1,147 @@
+name: Claude backlog build
+
+# Build a backlog from the description/vision documents and the code, then let
+# an independent session check every candidate against the repository before
+# anything is filed. Dispatch only: a backlog build is an occasional act, and
+# an unattended one against a twelve-step repo would file a lot at once.
+#
+# Advisory. Not a merge gate, not on pull_request.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: 'Documents to read (space-separated paths). Empty = repo defaults; code-only is valid.'
+        required: false
+        default: ''
+      apply:
+        description: 'Create and update GitHub issues. Leave false to inspect the plan first.'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: backlog-build
+  cancel-in-progress: false
+
+env:
+  CLAUDE_CLI_VERSION: '2.1.246'
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Claude Code CLI (pinned)
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CLI_VERSION}"
+
+      - name: Run the backlog-build chain
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCES: ${{ inputs.sources }}
+        run: |
+          set -euo pipefail
+          mkdir -p backlog-build
+          # shellcheck disable=SC2086 -- SOURCES is a deliberate word list
+          bash .github/scripts/run-backlog-build.sh backlog-build -- $SOURCES
+
+      - name: Format summary markdown
+        env:
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash .github/scripts/format-backlog-build.sh \
+            backlog-build/backlog-final.json "$SHA" "$RUN_URL" > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dump open and prior backlog issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const closed = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'closed', labels: 'backlog-build', per_page: 100,
+            });
+            const seen = new Set();
+            const issues = [];
+            for (const issue of [...open, ...closed]) {
+              if (issue.pull_request || seen.has(issue.number)) continue;
+              seen.add(issue.number);
+              issues.push({
+                number: issue.number,
+                title: issue.title,
+                body: issue.body || '',
+                state: issue.state,
+                labels: (issue.labels || []).map((l) =>
+                  typeof l === 'string' ? l : l.name
+                ),
+              });
+            }
+            fs.writeFileSync('existing-issues.json', JSON.stringify(issues, null, 2));
+            core.info(`Dumped ${issues.length} issues for matching`);
+
+      - name: Plan issue create/update/skip
+        env:
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/plan-backlog-issues.py \
+            backlog-build/backlog-final.json existing-issues.json "$SHA" "$RUN_URL" \
+            > backlog-actions.json
+          # The plan touches the real backlog: refuse a malformed one here
+          # rather than half-way through creating issues.
+          python3 .github/scripts/validate-json.py \
+            .github/schemas/backlog-actions.schema.json backlog-actions.json
+          jq '.summary, .dropped' backlog-actions.json
+          {
+            echo '### Issue plan'
+            echo
+            echo '```json'
+            jq '.summary' backlog-actions.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backlog-build
+          path: |
+            backlog-build/
+            summary.md
+            existing-issues.json
+            backlog-actions.json
+          if-no-files-found: error
+
+      - name: Create or update backlog issues
+        if: ${{ inputs.apply }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const path = require('path');
+            const apply = require(path.join(
+              process.env.GITHUB_WORKSPACE,
+              '.github/scripts/apply-backlog-issues.js'
+            ));
+            await apply({ github, context, core });
+
+      - name: Report dry run
+        if: ${{ !inputs.apply }}
+        run: |
+          echo "::notice::Dry run — no issues touched. Download the backlog-build artifact, then re-dispatch with apply: true."

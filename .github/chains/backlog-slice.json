@@ -1,0 +1,27 @@
+{
+  "name": "backlog-slice",
+  "description": "Cut one oversized issue into tracer-bullet vertical slices. One stage on purpose: this is run by a human who reads the result immediately, so the reviewer is in the loop already. The independent verify pass exists in the chains whose output reaches GitHub unattended.",
+  "stages": [
+    {
+      "id": "slice",
+      "prompt": ".github/prompts/backlog-slice.md",
+      "schema": ".github/schemas/backlog-slices.schema.json",
+      "model": "sonnet",
+      "model_env": "SLICE_MODEL",
+      "budget": "0.60",
+      "budget_env": "SLICE_BUDGET_USD",
+      "tools": "Read,Grep,Glob",
+      "max_turns": 30,
+      "max_turns_env": "SLICE_MAX_TURNS",
+      "context": [
+        {
+          "heading": "The issue to slice",
+          "from": "file",
+          "path_env": "SLICE_ISSUE_FILE",
+          "format": "json"
+        }
+      ],
+      "on_missing_output": "fail"
+    }
+  ]
+}

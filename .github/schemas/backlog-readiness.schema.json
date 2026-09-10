@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet backlog — issue readiness verdict",
+  "description": "One issue in, one verdict out. Deliberately a single stage with no tools: this runs on every issue edit, so it judges the text as written rather than researching the codebase.",
+  "type": "object",
+  "properties": {
+    "issue": { "type": "integer", "description": "The issue number assessed." },
+    "verdict": {
+      "type": "string",
+      "enum": ["ready", "needs-work", "blocked"],
+      "description": "ready: someone could pick it up as written. needs-work: they would have to ask a question first. blocked: it cannot proceed as written — it breaks a DuckNet rule, or asks for something contradictory."
+    },
+    "summary": { "type": "string", "description": "One or two sentences a maintainer can read without opening anything else." },
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["acceptance-criteria", "scope", "files", "size", "context", "testability", "title-clarity", "step-diagram"]
+      },
+      "description": "What the issue lacks. Empty when the verdict is ready."
+    },
+    "strengths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "What the issue already does well. Say something true here even when the verdict is needs-work."
+    },
+    "questions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The questions someone would have to ask before starting. These are the point of the whole check."
+    },
+    "rule_conflict": {
+      "type": "string",
+      "description": "Present only when the issue would break one of the five CLAUDE.md rules. Name the rule and the sentence that breaks it."
+    },
+    "suggested_acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Criteria the issue could adopt, drawn from what it already says. Do not invent scope it does not have."
+    }
+  },
+  "required": ["issue", "verdict", "summary", "missing", "strengths", "questions"],
+  "additionalProperties": false
+}

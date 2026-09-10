@@ -1,0 +1,97 @@
+{
+  "summary": "Read the roadmap and the as-built step records, then searched src/ for what already exists. The backlog is dominated by Step 12c (first live Azure environment) plus two operational gaps in the Centers.",
+  "sources": [
+    { "kind": "document", "ref": "ImplementationPlan.md", "used": "Step 12c scope and acceptance criteria" },
+    { "kind": "document", "ref": "docs/azure-first-deploy.md", "used": "the one-time bootstrap already written down" },
+    { "kind": "code", "ref": "infra/bicep", "used": "which resources compile today but have never been applied" }
+  ],
+  "items": [
+    {
+      "id": "azure-first-environment",
+      "kind": "epic",
+      "title": "Stand up the first live Azure environment",
+      "parent": null,
+      "body": "Step 12b left Bicep that compiles and Dockerfiles that build, with nothing deployed. This epic is the first environment that actually runs.\n\nOut of scope: multi-region, autoscale, cost alerts.",
+      "acceptance_criteria": [
+        "All four Centers are reachable in one Azure resource group",
+        "The Step 11 demo runs against the deployed environment"
+      ],
+      "evidence": [
+        { "source": "ImplementationPlan.md", "detail": "\"Step 12c — first Azure environment (live deploy)\"" },
+        { "source": "infra/bicep", "detail": "templates compile in CI but infra.yml has never applied them" }
+      ],
+      "size": "large",
+      "labels": ["infrastructure"],
+      "depends_on": []
+    },
+    {
+      "id": "azure-bootstrap-identity",
+      "kind": "story",
+      "title": "Bootstrap the subscription: resource group, federated identity, and CI secrets",
+      "parent": "azure-first-environment",
+      "body": "One-time setup so deploy-center.yml can authenticate without a stored client secret.",
+      "acceptance_criteria": [
+        "infra.yml runs what-if against the real subscription and exits 0",
+        "No client secret is stored in repository secrets"
+      ],
+      "evidence": [
+        { "source": "docs/azure-first-deploy.md", "detail": "the bootstrap steps are documented but not executed" }
+      ],
+      "size": "small",
+      "labels": ["infrastructure"],
+      "depends_on": []
+    },
+    {
+      "id": "azure-deploy-centers",
+      "kind": "story",
+      "title": "Deploy the four Centers to Container Apps from CI",
+      "parent": "azure-first-environment",
+      "body": "Wire deploy-center.yml to push each Center image and roll it out.",
+      "acceptance_criteria": [
+        "deploy-center.yml deploys one Center on dispatch and reports the revision",
+        "GET /metrics on DashboardCenter answers from the deployed instance"
+      ],
+      "evidence": [
+        { "source": ".github/workflows/deploy-center.yml", "detail": "the workflow exists but has no live target" }
+      ],
+      "size": "medium",
+      "labels": ["infrastructure"],
+      "depends_on": ["azure-bootstrap-identity"]
+    },
+    {
+      "id": "dashboard-dlq-replay-ui",
+      "kind": "story",
+      "title": "Add a DLQ replay button to the Dashboard UI",
+      "parent": null,
+      "body": "Operators should be able to replay a dead-lettered event without curl.",
+      "acceptance_criteria": [
+        "The Vue UI lists DLQ entries and replays one on click"
+      ],
+      "evidence": [
+        { "source": "src/DuckNet.DashboardCenter", "detail": "DLQ is stored but the UI does not surface it" }
+      ],
+      "size": "small",
+      "labels": ["enhancement"],
+      "depends_on": []
+    },
+    {
+      "id": "contracts-squeaked-v3",
+      "kind": "story",
+      "title": "Introduce Squeaked v3 with a duck firmware version",
+      "parent": null,
+      "body": "Carry the emitting duck's firmware version so Centers can branch on it.",
+      "acceptance_criteria": [
+        "Squeaked v3 upcasts from v2 in EventUpcasterPipeline"
+      ],
+      "evidence": [
+        { "source": "src/DuckNet.Contracts", "detail": "v1 and v2 exist; no consumer has asked for v3" }
+      ],
+      "size": "medium",
+      "labels": [],
+      "depends_on": []
+    }
+  ],
+  "notes": [
+    "A 'call BillingCenter from AlarmCenter to check the fee' idea appeared in the roadmap discussion; it violates rule 1 and is not an item."
+  ]
+}

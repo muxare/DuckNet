@@ -1,0 +1,23 @@
+[
+  {
+    "number": 41,
+    "title": "Bootstrap the subscription: resource group, federated identity, and CI secrets",
+    "state": "open",
+    "labels": ["backlog", "backlog-build", "infrastructure"],
+    "body": "<!-- ducknet-backlog:azure-bootstrap-identity -->\n<!-- sha: 0000000 -->\n## Old generated text\n\nstale\n<!-- /ducknet-backlog -->\n\n### Notes from standup\n\nWait for the subscription owner to grant Contributor.\n"
+  },
+  {
+    "number": 33,
+    "title": "Deploy the four Centers to Container Apps from CI",
+    "state": "closed",
+    "labels": ["backlog-build"],
+    "body": "Decided against: we deploy from Aspire instead.\n"
+  },
+  {
+    "number": 38,
+    "title": "Share the duck_progress load/mark logic between AlarmStore and BillingStore",
+    "state": "open",
+    "labels": ["refactoring", "refactor-scan"],
+    "body": "<!-- ducknet-refactor:alarmstore-billingstore-duck-progress -->\nunrelated\n"
+  }
+]

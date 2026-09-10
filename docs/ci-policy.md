@@ -1,6 +1,6 @@
 # CI and ReviewFlow — policy and later work
 
-Live behavior is in [`claude-review.yml`](../.github/workflows/claude-review.yml), [`refactor-scan.yml`](../.github/workflows/refactor-scan.yml), and [`ci.yml`](../.github/workflows/ci.yml). This file is the backlog after the ReviewFlow MVP: what to do next, what to leave parked.
+Live behavior is in [`claude-review.yml`](../.github/workflows/claude-review.yml), [`refactor-scan.yml`](../.github/workflows/refactor-scan.yml), the `backlog-*.yml` chains, and [`ci.yml`](../.github/workflows/ci.yml). How the multi-stage chains are wired: [agent-chains.md](./agent-chains.md). This file is the backlog after the ReviewFlow MVP: what to do next, what to leave parked.
 
 CCA-F Scenario 5 expansion (test generation, `--bare`/retry, failed-CI diagnose) is specified in [`cca-f-ci-cd.md`](./cca-f-ci-cd.md) — implement that; do not treat it as live until a phase ships.
 
@@ -8,7 +8,13 @@ CCA-F Scenario 5 expansion (test generation, `--bare`/retry, failed-CI diagnose)
 
 - **Required to merge:** `ci.yml` (`build-and-test`). Tests decide.
 - **Advisory (PR):** `claude-review.yml` (triage → architecture/security if requested → one aggregated comment). Verdict never fails the workflow. Jobs fail only on infrastructure (missing `CLAUDE_CODE_OAUTH_TOKEN`). Each job writes a GitHub Actions summary (what the stage does + its structured object); the sticky comment has a pipeline table and the same JSON in a collapsed block.
-- **Advisory (tree):** `refactor-scan.yml` — weekly Monday + `workflow_dispatch`. Two isolated Sonnet sessions (scan, then independent confidence) merged by `jq`. One GitHub issue per held patch finding and per plan-tier `proposed_issues` item; later runs update matching open issues (scan marker, then title) and skip closed `refactor-scan` issues. Not on `pull_request` (step PRs must not pick up unrelated refactors; ~`$1.50` per run). Scheduled runs skip if HEAD SHA already has a successful scan run. Local `/refactor-scan` does not open issues.
+- **Advisory (tree):** `refactor-scan.yml` — weekly Monday + `workflow_dispatch`. Two isolated Sonnet sessions (scan, then independent confidence) merged by `jq`, declared in [`.github/chains/refactor-scan.json`](../.github/chains/refactor-scan.json) and run by `run-chain.py`. One GitHub issue per held patch finding and per plan-tier `proposed_issues` item; later runs update matching open issues (scan marker, then title) and skip closed `refactor-scan` issues. Not on `pull_request` (step PRs must not pick up unrelated refactors; ~`$1.50` per run). Scheduled runs skip if HEAD SHA already has a successful scan run. Local `/refactor-scan` does not open issues.
+- **Advisory (backlog):** four chains over GitHub issues, none of which closes, relabels, or rewrites an issue.
+  - `backlog-build.yml` — `workflow_dispatch` only, `apply: false` by default. Builds epics and stories from the description/vision documents and/or the code (either alone suffices), then an independent Sonnet session checks every candidate against the repo. `already-done`, `unfounded`, and anything under `0.6` confidence are reported and never filed. Re-runs update by `<!-- ducknet-backlog:KEY -->` marker, then title; closed matches are skipped. ~`$1.50`–`$2.50` per run.
+  - `backlog-groom.yml` — weekly Wednesday + `workflow_dispatch` (offset from Monday's refactor scan, so it grooms what that filed). Refinement / grouping / duplicate / stale / gap / ordering findings, each re-checked by an independent pass. One sticky **Backlog grooming report** issue, rewritten in place; dismissed findings stay visible rather than vanishing. ~`$0.50`–`$1.00`.
+  - `backlog-readiness.yml` — `issues: opened, edited`. One Haiku session, no tools, judging the issue text only; one sticky comment, edited in place. Skips bot actors and issues labelled `refactor-scan` / `backlog-build` / `backlog-groom`. ~`$0.02`.
+  - `backlog-slice` — local `/backlog-slice <issue#>` only, no workflow. Cuts one issue into tracer-bullet vertical slices; refusing to slice is a valid result.
+- **Local backlog commands** (`/backlog-build`, `/backlog-groom`, `/backlog-slice`) never touch GitHub. Fixture tests for the merge, plan, and markdown run without a token or network: `bash .github/scripts/test-backlog.sh`.
 - **Skipped:** draft PRs, fork PRs, docs-only diffs (`docs/**`, `*.md`, `*.html`).
 - **Interactive:** `@claude` via [`claude.yml`](../.github/workflows/claude.yml) (OWNER/MEMBER/COLLABORATOR only).
 - Do not make Claude a required status check until the loop is boringly stable.
@@ -66,6 +72,26 @@ ReviewFlow-as-a-platform. Interesting elsewhere; not required for DuckNet.
 - Anthropic `code-review` plugin in CI (interactive plugin; known silent-failure risk)
 - Making Claude a required merge check
 - MCP-enriched review (Step 9+: `list_dlq`, lag) until those tools exist
+
+## Chain consolidation — done
+
+The refactor scan predates the chain engine and was hand-coded in bash. It now
+runs on the same machinery as the backlog chains, so there is one way to add a
+stage and one place a stage boundary is enforced:
+
+- `run-refactor-scan.sh` is a wrapper over `run-chain.py` + [`.github/chains/refactor-scan.json`](../.github/chains/refactor-scan.json). Behaviour it used to hand-code — extract `.structured_output`, blind the verifier with `jq`, degrade when the confidence pass returns nothing, skip the pass when there is nothing to assess — is now declared in the manifest and enforced for every chain at once.
+- `plan-refactor-issues.py` builds on the shared `issue_plan.IssuePlanner` (namespace `ducknet-refactor`). The ~150 duplicated lines of marker parsing, title matching and body splicing are gone; the rendering, the confidence bar and the label rules stayed put.
+- `merge-refactor-confidence.sh` is deleted. `merge-confidence.sh` does the same join for all four chains; the manifest passes the array, the id field and the noun for the unassessed note.
+- `run-claude.sh` only hard-fails on a missing `CLAUDE_CODE_OAUTH_TOKEN` under `GITHUB_ACTIONS`. Locally it falls through to the CLI's own login, which is what `/refactor-scan` and `/backlog-*` always claimed to need.
+
+One behaviour change worth knowing: an empty scan used to short-circuit before
+the merge, so `findings-final.json` was a copy of `findings.json`. It now goes
+through the merge with a skipped verify stage, so the file gains a
+`no findings to assess` note. Same findings, one extra line of provenance.
+
+## Backlog chains — later work
+
+- Consider a `needs-refinement` label applied from grooming findings. Deliberately not in v1: a weekly workflow that relabels the board is harder to trust than one that only reports.
 
 ## Never
 

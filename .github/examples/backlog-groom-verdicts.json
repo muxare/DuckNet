@@ -1,0 +1,40 @@
+{
+  "assessments": [
+    {
+      "id": "group-consumer-base-extraction",
+      "verdict": "holds",
+      "confidence": 0.9,
+      "rationale": "Read all three issues: #36 creates the base, #37 migrates onto it, #34 removes a duplicate that the same base would absorb. One outcome.",
+      "evidence_checked": ["#34", "#36", "#37"]
+    },
+    {
+      "id": "order-36-before-37",
+      "verdict": "holds",
+      "confidence": 0.95,
+      "rationale": "#37's body names EventConsumerBase as the target type, and no such type exists in src/ today.",
+      "evidence_checked": ["#36", "#37", "src/DuckNet.Kernel/Consumer"]
+    },
+    {
+      "id": "refine-25-acceptance",
+      "verdict": "partly",
+      "confidence": 0.7,
+      "rationale": "The issue does lack acceptance criteria, but it does name the four helpers, so 'files' overstates what is missing.",
+      "evidence_checked": ["#25"]
+    },
+    {
+      "id": "gap-step-12c-azure",
+      "verdict": "holds",
+      "confidence": 0.85,
+      "rationale": "No open issue mentions Azure, Container Apps, or Step 12c; ImplementationPlan.md lists it as the next step.",
+      "evidence_checked": ["ImplementationPlan.md", "infra/bicep"]
+    },
+    {
+      "id": "stale-38-duck-progress",
+      "verdict": "does-not-hold",
+      "confidence": 0.15,
+      "rationale": "AlarmStore and BillingStore still each define their own duck_progress load/mark; no shared helper exists. The issue is live.",
+      "evidence_checked": ["src/DuckNet.AlarmCenter", "src/DuckNet.BillingCenter"]
+    }
+  ],
+  "notes": []
+}

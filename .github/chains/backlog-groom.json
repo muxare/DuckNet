@@ -1,0 +1,75 @@
+{
+  "name": "backlog-groom",
+  "description": "Read the open backlog and the code, report what needs refinement, what belongs under a common parent, what is duplicated, stale, missing, or out of order — then have an independent session re-check every claim before it reaches the report.",
+  "stages": [
+    {
+      "id": "groom",
+      "description": "Observe the board. Cannot score itself: its schema has no verdict and no confidence field.",
+      "prompt": ".github/prompts/backlog-groom.md",
+      "schema": ".github/schemas/backlog-groom.schema.json",
+      "model": "sonnet",
+      "model_env": "GROOM_MODEL",
+      "budget": "0.75",
+      "budget_env": "GROOM_BUDGET_USD",
+      "tools": "Read,Grep,Glob",
+      "max_turns": 40,
+      "max_turns_env": "GROOM_MAX_TURNS",
+      "context": [
+        {
+          "heading": "Open backlog",
+          "from": "file",
+          "path_env": "BACKLOG_ISSUES_FILE",
+          "format": "json"
+        }
+      ],
+      "on_missing_output": "fail"
+    },
+    {
+      "id": "verify",
+      "description": "Independent pass. Sees the findings' claims and the same backlog, but not the groomer's argument for them.",
+      "prompt": ".github/prompts/backlog-groom-verify.md",
+      "schema": ".github/schemas/backlog-groom-verdicts.schema.json",
+      "model": "sonnet",
+      "model_env": "GROOM_VERIFY_MODEL",
+      "budget": "0.60",
+      "budget_env": "GROOM_VERIFY_BUDGET_USD",
+      "tools": "Read,Grep,Glob",
+      "max_turns": 35,
+      "max_turns_env": "GROOM_VERIFY_MAX_TURNS",
+      "context": [
+        {
+          "heading": "Findings to assess",
+          "from": "stage",
+          "stage": "groom",
+          "jq": "{findings: [.findings[] | {id, kind, title, issues, missing, keep, blocked_by, evidence: [(.evidence // [])[] | {source}]}]}"
+        },
+        {
+          "heading": "The same backlog the groomer read",
+          "from": "file",
+          "path_env": "BACKLOG_ISSUES_FILE",
+          "format": "json"
+        }
+      ],
+      "skip_if": {
+        "stage": "groom",
+        "jq": "(.findings | length) == 0",
+        "reason": "the groom stage reported nothing to assess"
+      },
+      "skip_output": {
+        "assessments": [],
+        "notes": ["no findings to assess"]
+      },
+      "on_missing_output": "degrade",
+      "degrade_output": {
+        "assessments": [],
+        "notes": ["the independent assessment pass produced no usable output; findings are unassessed and every confidence is null"]
+      }
+    }
+  ],
+  "merge": {
+    "script": ".github/scripts/merge-confidence.sh",
+    "args": ["{{stage:groom}}", "{{stage:verify}}", "findings", "id", "finding"],
+    "output": "groom-final.json",
+    "schema": ".github/schemas/backlog-groom-final.schema.json"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "DuckNet agent chain run report",
+  "description": "What run-chain.py writes after a chain finishes. Machine-readable so CI can gate, summarize, or cost-report without parsing logs.",
+  "type": "object",
+  "properties": {
+    "chain": { "type": "string" },
+    "outdir": { "type": "string" },
+    "status": { "type": "string", "enum": ["ok", "failed", "dry-run"] },
+    "total_cost_usd": { "type": "number" },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "model": { "type": "string" },
+          "budget_usd": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["ok", "skipped", "degraded", "failed", "dry-run"],
+            "description": "ok: valid structured output. skipped: skip_if fired. degraded: no valid output but the chain continued on the declared fallback. failed: the chain stopped here."
+          },
+          "reason": { "type": "string" },
+          "input": { "type": "string" },
+          "output": { "type": "string" },
+          "schema_error": { "type": "boolean", "description": "The session returned an object that did not satisfy the stage schema." },
+          "claude_exit": { "type": "integer" },
+          "claude_subtype": { "type": "string" },
+          "cost_usd": { "type": "number" },
+          "num_turns": { "type": "integer" }
+        },
+        "required": ["id", "status"],
+        "additionalProperties": false
+      }
+    },
+    "merge": {
+      "type": "object",
+      "properties": {
+        "script": { "type": "string" },
+        "output": { "type": "string" },
+        "status": { "type": "string", "enum": ["ok", "invalid"] }
+      },
+      "required": ["script", "output", "status"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["chain", "outdir", "status", "stages"],
+  "additionalProperties": false
+}
